@@ -12,9 +12,14 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used to scan receipts",
+        "NSPhotoLibraryUsageDescription": "Used to save receipt photos"
+      }
     },
     "android": {
+      "permissions": ["CAMERA"],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
