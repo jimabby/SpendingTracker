@@ -9,6 +9,7 @@ import {
   Alert,
   Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -77,7 +78,7 @@ export default function CameraScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.header}>Receipts</Text>
         <TouchableOpacity style={styles.captureBtn} onPress={() => setCameraVisible(true)}>
@@ -118,7 +119,7 @@ export default function CameraScreen() {
           <Ionicons name="camera" size={28} color="#fff" />
         </TouchableOpacity>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 

@@ -14,7 +14,7 @@ export interface Card {
   id: string;
   name: string;
   lastFour: string;
-  dueDate: number; // day of month 1-31
+  dueDate: string; // "M-D" format e.g. "1-21" = January 21
   benefits: string;
   color: string;
 }
@@ -24,6 +24,8 @@ export interface AppState {
   cards: Card[];
   currency: string;
   categories: string[];
+  aiProvider: string;
+  aiKey: string;
 }
 
 export type AppAction =
@@ -35,4 +37,5 @@ export type AppAction =
   | { type: 'SET_CURRENCY'; payload: string }
   | { type: 'ADD_CATEGORY'; payload: string }
   | { type: 'DELETE_CATEGORY'; payload: string }
+  | { type: 'SET_AI_SETTINGS'; payload: { provider: string; apiKey: string } }
   | { type: 'LOAD_STATE'; payload: AppState };

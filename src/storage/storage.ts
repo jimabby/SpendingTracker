@@ -9,6 +9,8 @@ export const defaultState: AppState = {
   cards: [],
   currency: 'USD',
   categories: DEFAULT_CATEGORIES,
+  aiProvider: 'chatgpt',
+  aiKey: '',
 };
 
 export async function loadState(): Promise<AppState> {

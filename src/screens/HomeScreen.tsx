@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { BarChart, PieChart } from 'react-native-chart-kit';
 import { useApp } from '../context/AppContext';
 import { CATEGORY_COLORS } from '../constants/categories';
@@ -85,7 +86,8 @@ export default function HomeScreen() {
     new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <SafeAreaView style={styles.container}>
+    <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.header}>Overview</Text>
       <Text style={styles.month}>{format(now, 'MMMM yyyy')}</Text>
 
@@ -145,6 +147,7 @@ export default function HomeScreen() {
         </View>
       )}
     </ScrollView>
+    </SafeAreaView>
   );
 }
 

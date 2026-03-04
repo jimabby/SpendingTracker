@@ -27,6 +27,8 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, categories: [...state.categories, action.payload] };
     case 'DELETE_CATEGORY':
       return { ...state, categories: state.categories.filter(c => c !== action.payload) };
+    case 'SET_AI_SETTINGS':
+      return { ...state, aiProvider: action.payload.provider, aiKey: action.payload.apiKey };
     default:
       return state;
   }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,24 +11,32 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 import { Card } from '../types';
 import { CARD_COLORS } from '../constants/categories';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
-function daysUntilDue(dueDay: number): number {
+function daysUntilDue(dueDate: string): number {
+  const [month, day] = dueDate.split('-').map(Number);
   const today = new Date();
-  const due = new Date(today.getFullYear(), today.getMonth(), dueDay);
-  if (due < today) due.setMonth(due.getMonth() + 1);
+  let due = new Date(today.getFullYear(), month - 1, day);
+  if (due <= today) due = new Date(today.getFullYear() + 1, month - 1, day);
   return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function formatDueDate(dueDate: string): string {
+  const [month, day] = dueDate.split('-').map(Number);
+  return `${MONTHS[month - 1]} ${day}`;
 }
 
 function CardItem({ card, onDelete }: { card: Card; onDelete: (id: string) => void }) {
@@ -46,7 +54,7 @@ function CardItem({ card, onDelete }: { card: Card; onDelete: (id: string) => vo
         <View>
           <Text style={styles.cardDueLabel}>Payment Due</Text>
           <Text style={styles.cardDueText}>
-            Day {card.dueDate} · {days === 0 ? 'Today!' : `${days}d left`}
+            {formatDueDate(card.dueDate)} · {days === 0 ? 'Today!' : `${days}d left`}
           </Text>
         </View>
         <View style={styles.cardChip}>
@@ -67,29 +75,30 @@ export default function CardsScreen() {
   const { state, dispatch } = useApp();
   const { cards } = state;
 
+  const scrollViewRef = useRef<ScrollView>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [name, setName] = useState('');
   const [lastFour, setLastFour] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(1);
+  const [selectedDay, setSelectedDay] = useState(1);
   const [benefits, setBenefits] = useState('');
   const [selectedColor, setSelectedColor] = useState(CARD_COLORS[0]);
 
   function handleAdd() {
     if (!name.trim()) { Alert.alert('Name required'); return; }
     if (!/^\d{4}$/.test(lastFour)) { Alert.alert('Enter last 4 digits'); return; }
-    const due = parseInt(dueDate, 10);
-    if (!due || due < 1 || due > 31) { Alert.alert('Enter a valid due date (1-31)'); return; }
 
     const card: Card = {
       id: generateId(),
       name: name.trim(),
       lastFour,
-      dueDate: due,
+      dueDate: `${selectedMonth}-${selectedDay}`,
       benefits: benefits.trim(),
       color: selectedColor,
     };
     dispatch({ type: 'ADD_CARD', payload: card });
-    setName(''); setLastFour(''); setDueDate(''); setBenefits('');
+    setName(''); setLastFour(''); setBenefits('');
+    setSelectedMonth(1); setSelectedDay(1);
     setSelectedColor(CARD_COLORS[0]);
     setModalVisible(false);
   }
@@ -102,7 +111,7 @@ export default function CardsScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.header}>My Cards</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
@@ -125,7 +134,7 @@ export default function CardsScreen() {
       />
 
       <Modal visible={modalVisible} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Card</Text>
@@ -134,48 +143,76 @@ export default function CardsScreen() {
               </TouchableOpacity>
             </View>
 
-            <TextInput style={styles.input} placeholder="Card name (e.g. Chase Sapphire)" value={name} onChangeText={setName} />
-            <TextInput
-              style={styles.input}
-              placeholder="Last 4 digits"
-              keyboardType="number-pad"
-              maxLength={4}
-              value={lastFour}
-              onChangeText={setLastFour}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Payment due day (1-31)"
-              keyboardType="number-pad"
-              value={dueDate}
-              onChangeText={setDueDate}
-            />
-            <TextInput
-              style={[styles.input, styles.inputMulti]}
-              placeholder="Benefits / rewards (optional)"
-              multiline
-              value={benefits}
-              onChangeText={setBenefits}
-            />
+            <ScrollView ref={scrollViewRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <TextInput style={styles.input} placeholder="Card name (e.g. Chase Sapphire)" value={name} onChangeText={setName} />
+              <TextInput
+                style={styles.input}
+                placeholder="Last 4 digits"
+                keyboardType="number-pad"
+                maxLength={4}
+                value={lastFour}
+                onChangeText={setLastFour}
+              />
 
-            <Text style={styles.inputLabel}>Card color</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorRow}>
-              {CARD_COLORS.map(c => (
-                <TouchableOpacity
-                  key={c}
-                  style={[styles.colorDot, { backgroundColor: c }, selectedColor === c && styles.colorDotSelected]}
-                  onPress={() => setSelectedColor(c)}
-                />
-              ))}
+              <Text style={styles.inputLabel}>Payment Due Date</Text>
+              <View style={styles.pickerRow}>
+                <View style={styles.pickerCol}>
+                  <Text style={styles.pickerHeader}>Month</Text>
+                  <Picker
+                    selectedValue={selectedMonth}
+                    onValueChange={(v) => setSelectedMonth(v)}
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {MONTHS.map((m, i) => (
+                      <Picker.Item key={m} label={m} value={i + 1} />
+                    ))}
+                  </Picker>
+                </View>
+                <View style={styles.pickerDivider} />
+                <View style={styles.pickerCol}>
+                  <Text style={styles.pickerHeader}>Day</Text>
+                  <Picker
+                    selectedValue={selectedDay}
+                    onValueChange={(v) => setSelectedDay(v)}
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {DAYS.map(d => (
+                      <Picker.Item key={d} label={String(d)} value={d} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+
+              <TextInput
+                style={[styles.input, styles.inputMulti]}
+                placeholder="Benefits / rewards (optional)"
+                multiline
+                value={benefits}
+                onChangeText={setBenefits}
+                onFocus={() => setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100)}
+              />
+
+              <Text style={styles.inputLabel}>Card color</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorRow}>
+                {CARD_COLORS.map(c => (
+                  <TouchableOpacity
+                    key={c}
+                    style={[styles.colorDot, { backgroundColor: c }, selectedColor === c && styles.colorDotSelected]}
+                    onPress={() => setSelectedColor(c)}
+                  />
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity style={styles.saveBtn} onPress={handleAdd}>
+                <Text style={styles.saveBtnText}>Add Card</Text>
+              </TouchableOpacity>
             </ScrollView>
-
-            <TouchableOpacity style={styles.saveBtn} onPress={handleAdd}>
-              <Text style={styles.saveBtnText}>Add Card</Text>
-            </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -243,6 +280,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 40,
+    maxHeight: '90%',
   },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#2D3436' },
@@ -256,7 +294,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
   },
   inputMulti: { height: 72, textAlignVertical: 'top' },
-  inputLabel: { fontSize: 13, fontWeight: '600', color: '#636E72', marginBottom: 10 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#636E72', marginBottom: 6 },
+  pickerRow: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#DFE6E9',
+    borderRadius: 12,
+    backgroundColor: '#F8F9FA',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  pickerCol: { flex: 1 },
+  pickerHeader: { textAlign: 'center', fontSize: 12, color: '#636E72', paddingTop: 8 },
+  pickerDivider: { width: 1, backgroundColor: '#DFE6E9', marginVertical: 8 },
+  picker: { height: 120 },
+  pickerItem: { fontSize: 16, height: 120 },
   colorRow: { marginBottom: 20 },
   colorDot: { width: 32, height: 32, borderRadius: 16, marginRight: 10 },
   colorDotSelected: { borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
