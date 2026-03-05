@@ -603,7 +603,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   apiKeyInput: { flex: 1, fontSize: 14, paddingVertical: 12 },
-  eyeBtn: { padding: 4 },
+  eyeBtn: { padding: 10 },
   apiKeyHint: { fontSize: 11, color: '#B2BEC3', marginHorizontal: 16, marginTop: 6 },
   saveKeyBtn: {
     margin: 16,

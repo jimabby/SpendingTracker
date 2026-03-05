@@ -15,10 +15,12 @@ export interface Card {
   id: string;
   name: string;
   lastFour: string;
-  dueDate: string; // "M-D" format e.g. "1-21" = January 21
+  dueDate: string; // day of month e.g. "15" = due on the 15th every month
   benefits: string;
   color: string;
   reminderEnabled?: boolean;
+  annualFee?: number;       // e.g. 95
+  anniversaryDate?: string; // "M-D" format e.g. "3-15" = March 15
 }
 
 export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
@@ -50,6 +52,7 @@ export type AppAction =
   | { type: 'DELETE_TRANSACTION'; payload: string }
   | { type: 'UPDATE_TRANSACTION'; payload: Transaction }
   | { type: 'ADD_CARD'; payload: Card }
+  | { type: 'UPDATE_CARD'; payload: Card }
   | { type: 'DELETE_CARD'; payload: string }
   | { type: 'TOGGLE_CARD_REMINDER'; payload: string }
   | { type: 'SET_CURRENCY'; payload: string }

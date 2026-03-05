@@ -33,17 +33,32 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
+function ordinal(day: number): string {
+  if ([11, 12, 13].includes(day)) return `${day}th`;
+  switch (day % 10) {
+    case 1: return `${day}st`;
+    case 2: return `${day}nd`;
+    case 3: return `${day}rd`;
+    default: return `${day}th`;
+  }
+}
+
+function parseDueDay(dueDate: string): number {
+  const parts = dueDate.split('-').map(Number);
+  return parts[parts.length - 1]; // handles both old "M-D" and new "D" format
+}
+
 function daysUntilDue(dueDate: string): number {
-  const [month, day] = dueDate.split('-').map(Number);
+  const day = parseDueDay(dueDate);
   const today = new Date();
-  let due = new Date(today.getFullYear(), month - 1, day);
-  if (due <= today) due = new Date(today.getFullYear() + 1, month - 1, day);
+  let due = new Date(today.getFullYear(), today.getMonth(), day);
+  if (due <= today) due = new Date(today.getFullYear(), today.getMonth() + 1, day);
   return Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function formatDueDate(dueDate: string): string {
-  const [month, day] = dueDate.split('-').map(Number);
-  return `${MONTHS[month - 1]} ${day}`;
+function formatAnniversary(date: string): string {
+  const [month, day] = date.split('-').map(Number);
+  return `${MONTHS[month - 1]} ${ordinal(day)}`;
 }
 
 function CardItem({
@@ -51,16 +66,19 @@ function CardItem({
   spent,
   currency,
   onDelete,
+  onEdit,
   onToggleReminder,
 }: {
   card: Card;
   spent: number;
   currency: string;
   onDelete: (id: string) => void;
+  onEdit: (card: Card) => void;
   onToggleReminder: (card: Card) => void;
 }) {
   const t = useTranslation();
   const days = daysUntilDue(card.dueDate);
+  const dueDay = parseDueDay(card.dueDate);
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
 
@@ -76,6 +94,9 @@ function CardItem({
               color={card.reminderEnabled ? '#fff' : 'rgba(255,255,255,0.55)'}
             />
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => onEdit(card)} style={styles.actionBtn}>
+            <Ionicons name="pencil-outline" size={18} color="rgba(255,255,255,0.75)" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => onDelete(card.id)} style={styles.actionBtn}>
             <Ionicons name="trash-outline" size={18} color="rgba(255,255,255,0.55)" />
           </TouchableOpacity>
@@ -88,7 +109,7 @@ function CardItem({
         <View>
           <Text style={styles.cardDueLabel}>{t('paymentDue')}</Text>
           <Text style={styles.cardDueText}>
-            {formatDueDate(card.dueDate)} · {days === 0 ? t('todayDue') : `${days}${t('daysLeft')}`}
+            {t('monthlyOn')} {ordinal(dueDay)} · {days === 0 ? t('todayDue') : `${days}${t('daysLeft')}`}
           </Text>
         </View>
         {spent > 0 && (
@@ -99,10 +120,26 @@ function CardItem({
         )}
       </View>
 
-      {card.benefits ? (
-        <View style={styles.benefitsRow}>
-          <Ionicons name="gift-outline" size={13} color="rgba(255,255,255,0.8)" />
-          <Text style={styles.benefitsText} numberOfLines={2}>{card.benefits}</Text>
+      {(card.annualFee || card.anniversaryDate || card.benefits) ? (
+        <View style={styles.extraRow}>
+          {card.annualFee ? (
+            <View style={styles.extraItem}>
+              <Ionicons name="calendar-outline" size={12} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.extraText}>{t('annualFee')}: {fmt(card.annualFee)}</Text>
+            </View>
+          ) : null}
+          {card.anniversaryDate ? (
+            <View style={styles.extraItem}>
+              <Ionicons name="star-outline" size={12} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.extraText}>{t('anniversary')}: {formatAnniversary(card.anniversaryDate)}</Text>
+            </View>
+          ) : null}
+          {card.benefits ? (
+            <View style={styles.extraItem}>
+              <Ionicons name="gift-outline" size={12} color="rgba(255,255,255,0.7)" />
+              <Text style={styles.extraText} numberOfLines={2}>{card.benefits}</Text>
+            </View>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -116,60 +153,99 @@ export default function CardsScreen() {
 
   const scrollViewRef = useRef<ScrollView>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingCard, setEditingCard] = useState<Card | null>(null);
+
+  // Form fields
   const [name, setName] = useState('');
   const [lastFour, setLastFour] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState(1);
   const [selectedDay, setSelectedDay] = useState(1);
   const [benefits, setBenefits] = useState('');
   const [selectedColor, setSelectedColor] = useState(CARD_COLORS[0]);
+  const [annualFee, setAnnualFee] = useState('');
+  const [anniversaryMonth, setAnniversaryMonth] = useState(1);
+  const [anniversaryDay, setAnniversaryDay] = useState(1);
+  const [hasAnniversary, setHasAnniversary] = useState(false);
 
   useEffect(() => {
     setupNotificationChannel();
   }, []);
 
-  // Total spending per card (all time)
   const cardSpending = useMemo(() => {
     const map: Record<string, number> = {};
     transactions
       .filter(tx => tx.type === 'expense' && tx.cardId)
-      .forEach(tx => {
-        map[tx.cardId!] = (map[tx.cardId!] || 0) + tx.amount;
-      });
+      .forEach(tx => { map[tx.cardId!] = (map[tx.cardId!] || 0) + tx.amount; });
     return map;
   }, [transactions]);
+
+  function openAddModal() {
+    setEditingCard(null);
+    setName(''); setLastFour(''); setBenefits('');
+    setSelectedDay(1); setSelectedColor(CARD_COLORS[0]);
+    setAnnualFee(''); setAnniversaryMonth(1); setAnniversaryDay(1);
+    setHasAnniversary(false);
+    setModalVisible(true);
+  }
+
+  function openEditModal(card: Card) {
+    setEditingCard(card);
+    setName(card.name);
+    setLastFour(card.lastFour);
+    setSelectedDay(parseDueDay(card.dueDate));
+    setBenefits(card.benefits || '');
+    setSelectedColor(card.color);
+    setAnnualFee(card.annualFee ? String(card.annualFee) : '');
+    if (card.anniversaryDate) {
+      const [m, d] = card.anniversaryDate.split('-').map(Number);
+      setAnniversaryMonth(m);
+      setAnniversaryDay(d);
+      setHasAnniversary(true);
+    } else {
+      setAnniversaryMonth(1); setAnniversaryDay(1);
+      setHasAnniversary(false);
+    }
+    setModalVisible(true);
+  }
+
+  function buildCard(id: string, reminderEnabled?: boolean): Card {
+    return {
+      id,
+      name: name.trim(),
+      lastFour,
+      dueDate: String(selectedDay),
+      benefits: benefits.trim(),
+      color: selectedColor,
+      reminderEnabled,
+      annualFee: annualFee.trim() ? parseFloat(annualFee) : undefined,
+      anniversaryDate: hasAnniversary ? `${anniversaryMonth}-${anniversaryDay}` : undefined,
+    };
+  }
+
+  function handleSave() {
+    if (!name.trim()) { Alert.alert(t('nameRequired')); return; }
+    if (!/^\d{4}$/.test(lastFour)) { Alert.alert(t('enterLastFour')); return; }
+    if (annualFee.trim() && isNaN(parseFloat(annualFee))) { Alert.alert(t('invalidAmount')); return; }
+
+    if (editingCard) {
+      const updated = buildCard(editingCard.id, editingCard.reminderEnabled);
+      dispatch({ type: 'UPDATE_CARD', payload: updated });
+      if (editingCard.reminderEnabled) scheduleCardReminder(updated);
+    } else {
+      dispatch({ type: 'ADD_CARD', payload: buildCard(generateId()) });
+    }
+    setModalVisible(false);
+  }
 
   async function handleToggleReminder(card: Card) {
     const willEnable = !card.reminderEnabled;
     if (willEnable) {
       const granted = await requestNotificationPermissions();
-      if (!granted) {
-        Alert.alert(t('billReminders'), t('notifPermissionDenied'));
-        return;
-      }
+      if (!granted) { Alert.alert(t('billReminders'), t('notifPermissionDenied')); return; }
       await scheduleCardReminder(card);
     } else {
       await cancelCardReminder(card.id);
     }
     dispatch({ type: 'TOGGLE_CARD_REMINDER', payload: card.id });
-  }
-
-  function handleAdd() {
-    if (!name.trim()) { Alert.alert(t('nameRequired')); return; }
-    if (!/^\d{4}$/.test(lastFour)) { Alert.alert(t('enterLastFour')); return; }
-
-    const card: Card = {
-      id: generateId(),
-      name: name.trim(),
-      lastFour,
-      dueDate: `${selectedMonth}-${selectedDay}`,
-      benefits: benefits.trim(),
-      color: selectedColor,
-    };
-    dispatch({ type: 'ADD_CARD', payload: card });
-    setName(''); setLastFour(''); setBenefits('');
-    setSelectedMonth(1); setSelectedDay(1);
-    setSelectedColor(CARD_COLORS[0]);
-    setModalVisible(false);
   }
 
   function handleDelete(id: string) {
@@ -178,10 +254,7 @@ export default function CardsScreen() {
       {
         text: t('delete'),
         style: 'destructive',
-        onPress: () => {
-          cancelCardReminder(id);
-          dispatch({ type: 'DELETE_CARD', payload: id });
-        },
+        onPress: () => { cancelCardReminder(id); dispatch({ type: 'DELETE_CARD', payload: id }); },
       },
     ]);
   }
@@ -190,7 +263,7 @@ export default function CardsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.header}>{t('myCards')}</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
+        <TouchableOpacity style={styles.addBtn} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
@@ -204,6 +277,7 @@ export default function CardsScreen() {
             spent={cardSpending[item.id] || 0}
             currency={currency}
             onDelete={handleDelete}
+            onEdit={openEditModal}
             onToggleReminder={handleToggleReminder}
           />
         )}
@@ -221,7 +295,7 @@ export default function CardsScreen() {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('addCard')}</Text>
+              <Text style={styles.modalTitle}>{editingCard ? t('editCard') : t('addCard')}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <Ionicons name="close" size={24} color="#636E72" />
               </TouchableOpacity>
@@ -238,37 +312,68 @@ export default function CardsScreen() {
                 onChangeText={setLastFour}
               />
 
-              <Text style={styles.inputLabel}>{t('paymentDueDate')}</Text>
-              <View style={styles.pickerRow}>
-                <View style={styles.pickerCol}>
-                  <Text style={styles.pickerHeader}>{t('month')}</Text>
-                  <Picker
-                    selectedValue={selectedMonth}
-                    onValueChange={(v) => setSelectedMonth(v)}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {MONTHS.map((m, i) => (
-                      <Picker.Item key={m} label={m} value={i + 1} />
-                    ))}
-                  </Picker>
-                </View>
-                <View style={styles.pickerDivider} />
-                <View style={styles.pickerCol}>
-                  <Text style={styles.pickerHeader}>{t('day')}</Text>
-                  <Picker
-                    selectedValue={selectedDay}
-                    onValueChange={(v) => setSelectedDay(v)}
-                    style={styles.picker}
-                    itemStyle={styles.pickerItem}
-                  >
-                    {DAYS.map(d => (
-                      <Picker.Item key={d} label={String(d)} value={d} />
-                    ))}
-                  </Picker>
-                </View>
+              {/* Monthly due day */}
+              <Text style={styles.inputLabel}>{t('monthlyDueDay')}</Text>
+              <View style={styles.pickerSingle}>
+                <Picker
+                  selectedValue={selectedDay}
+                  onValueChange={(v) => setSelectedDay(v)}
+                  style={styles.picker}
+                  itemStyle={styles.pickerItem}
+                >
+                  {DAYS.map(d => (
+                    <Picker.Item key={d} label={ordinal(d)} value={d} />
+                  ))}
+                </Picker>
               </View>
 
+              {/* Annual fee */}
+              <TextInput
+                style={styles.input}
+                placeholder={t('annualFeePlaceholder')}
+                keyboardType="decimal-pad"
+                value={annualFee}
+                onChangeText={setAnnualFee}
+              />
+
+              {/* Anniversary date */}
+              <TouchableOpacity style={styles.toggleRow} onPress={() => setHasAnniversary(v => !v)}>
+                <Text style={styles.inputLabel}>{t('anniversaryDate')}</Text>
+                <Ionicons name={hasAnniversary ? 'chevron-up' : 'chevron-down'} size={16} color="#636E72" />
+              </TouchableOpacity>
+              {hasAnniversary && (
+                <View style={styles.pickerRow}>
+                  <View style={styles.pickerCol}>
+                    <Text style={styles.pickerHeader}>{t('month')}</Text>
+                    <Picker
+                      selectedValue={anniversaryMonth}
+                      onValueChange={(v) => setAnniversaryMonth(v)}
+                      style={styles.picker}
+                      itemStyle={styles.pickerItem}
+                    >
+                      {MONTHS.map((m, i) => (
+                        <Picker.Item key={m} label={m} value={i + 1} />
+                      ))}
+                    </Picker>
+                  </View>
+                  <View style={styles.pickerDivider} />
+                  <View style={styles.pickerCol}>
+                    <Text style={styles.pickerHeader}>{t('day')}</Text>
+                    <Picker
+                      selectedValue={anniversaryDay}
+                      onValueChange={(v) => setAnniversaryDay(v)}
+                      style={styles.picker}
+                      itemStyle={styles.pickerItem}
+                    >
+                      {DAYS.map(d => (
+                        <Picker.Item key={d} label={String(d)} value={d} />
+                      ))}
+                    </Picker>
+                  </View>
+                </View>
+              )}
+
+              {/* Benefits */}
               <TextInput
                 style={[styles.input, styles.inputMulti]}
                 placeholder={t('benefitsPlaceholder')}
@@ -278,6 +383,7 @@ export default function CardsScreen() {
                 onFocus={() => setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100)}
               />
 
+              {/* Color */}
               <Text style={styles.inputLabel}>{t('cardColor')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorRow}>
                 {CARD_COLORS.map(c => (
@@ -289,8 +395,8 @@ export default function CardsScreen() {
                 ))}
               </ScrollView>
 
-              <TouchableOpacity style={styles.saveBtn} onPress={handleAdd}>
-                <Text style={styles.saveBtnText}>{t('addCard')}</Text>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+                <Text style={styles.saveBtnText}>{editingCard ? t('saveChanges') : t('addCard')}</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -321,7 +427,6 @@ const styles = StyleSheet.create({
   cardItem: {
     borderRadius: 20,
     padding: 20,
-    minHeight: 160,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
@@ -330,22 +435,21 @@ const styles = StyleSheet.create({
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   cardName: { fontSize: 18, fontWeight: '700', color: '#fff', flex: 1 },
-  cardActions: { flexDirection: 'row', gap: 14, alignItems: 'center' },
-  actionBtn: { padding: 2 },
+  cardActions: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+  actionBtn: { padding: 8 },
   cardNumber: { fontSize: 16, color: 'rgba(255,255,255,0.8)', letterSpacing: 2, marginBottom: 16 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   cardDueLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 },
   cardDueText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  benefitsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 5,
+  extraRow: {
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.2)',
+    gap: 4,
   },
-  benefitsText: { fontSize: 11, color: 'rgba(255,255,255,0.8)', flex: 1 },
+  extraItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  extraText: { fontSize: 11, color: 'rgba(255,255,255,0.8)', flex: 1 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
   empty: { alignItems: 'center', paddingTop: 80 },
   emptyText: { fontSize: 18, fontWeight: '600', color: '#636E72', marginTop: 16 },
@@ -357,7 +461,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 40,
-    maxHeight: '90%',
+    maxHeight: '92%',
   },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#2D3436' },
@@ -372,6 +476,15 @@ const styles = StyleSheet.create({
   },
   inputMulti: { height: 72, textAlignVertical: 'top' },
   inputLabel: { fontSize: 13, fontWeight: '600', color: '#636E72', marginBottom: 6 },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  pickerSingle: {
+    borderWidth: 1,
+    borderColor: '#DFE6E9',
+    borderRadius: 12,
+    backgroundColor: '#F8F9FA',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
   pickerRow: {
     flexDirection: 'row',
     borderWidth: 1,

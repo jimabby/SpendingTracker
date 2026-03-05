@@ -59,6 +59,8 @@ function reducer(state: AppState, action: AppAction): AppState {
       };
     case 'ADD_CARD':
       return { ...state, cards: [...state.cards, action.payload] };
+    case 'UPDATE_CARD':
+      return { ...state, cards: state.cards.map(c => c.id === action.payload.id ? action.payload : c) };
     case 'DELETE_CARD':
       return { ...state, cards: state.cards.filter(c => c.id !== action.payload) };
     case 'TOGGLE_CARD_REMINDER':

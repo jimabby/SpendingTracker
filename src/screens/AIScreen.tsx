@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 13, color: '#00B894', flex: 1 },
   inputBar: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     padding: 12,
     gap: 10,
     backgroundColor: '#fff',
@@ -429,9 +429,9 @@ const styles = StyleSheet.create({
     maxHeight: 100,
   },
   sendBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#6C5CE7',
     alignItems: 'center',
     justifyContent: 'center',

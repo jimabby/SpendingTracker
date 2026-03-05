@@ -228,7 +228,7 @@ export default function CameraScreen() {
                   <TouchableOpacity
                     style={styles.thumbDeleteBtn}
                     onPress={() => deletePhoto(item)}
-                    hitSlop={{ top: 4, left: 4, bottom: 4, right: 4 }}
+                    hitSlop={{ top: 10, left: 10, bottom: 10, right: 10 }}
                   >
                     <Ionicons name="close-circle" size={20} color="#fff" />
                   </TouchableOpacity>
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
     borderColor: '#DFE6E9',
     alignItems: 'center',
   },
-  typeBtnExpenseActive: { backgroundColor: '#FF6B6B', borderColor: '#FF6B6B' },
+  typeBtnExpenseActive: { backgroundColor: '#D63031', borderColor: '#D63031' },
   typeBtnIncomeActive: { backgroundColor: '#00B894', borderColor: '#00B894' },
   typeBtnText: { fontSize: 14, fontWeight: '600', color: '#636E72' },
   typeBtnTextActive: { color: '#fff' },
