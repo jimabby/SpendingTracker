@@ -19,6 +19,18 @@ export interface Card {
   color: string;
 }
 
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
+
+export interface RecurringTransaction {
+  id: string;
+  amount: number;
+  type: TransactionType;
+  category: string;
+  note: string;
+  frequency: RecurringFrequency;
+  lastAddedDate: string; // ISO string
+}
+
 export interface AppState {
   transactions: Transaction[];
   cards: Card[];
@@ -27,6 +39,8 @@ export interface AppState {
   aiProvider: string;
   aiKey: string;
   language: string;
+  budgets: Record<string, number>;
+  recurringTransactions: RecurringTransaction[];
 }
 
 export type AppAction =
@@ -40,4 +54,9 @@ export type AppAction =
   | { type: 'DELETE_CATEGORY'; payload: string }
   | { type: 'SET_AI_SETTINGS'; payload: { provider: string; apiKey: string } }
   | { type: 'SET_LANGUAGE'; payload: string }
+  | { type: 'SET_BUDGET'; payload: { category: string; amount: number } }
+  | { type: 'DELETE_BUDGET'; payload: string }
+  | { type: 'ADD_RECURRING'; payload: RecurringTransaction }
+  | { type: 'DELETE_RECURRING'; payload: string }
+  | { type: 'UPDATE_RECURRING_DATE'; payload: { id: string; lastAddedDate: string } }
   | { type: 'LOAD_STATE'; payload: AppState };

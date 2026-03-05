@@ -110,6 +110,25 @@ export const translations = {
     quickQ4: 'Analyze my spending habits',
     aiError: 'Failed to get a response. Check your API key in Settings.',
     aiLanguageInstruction: 'Respond in English.',
+
+    // Transaction editing
+    editTransaction: 'Edit Transaction',
+    updateTransaction: 'Update Transaction',
+
+    // Budget limits
+    budgetLimits: 'Budget Limits',
+    setBudget: 'Set Budgets',
+    noBudgetsHint: 'Enter a monthly limit for each category (leave blank to remove).',
+    noBudgetsSet: 'No budgets set',
+
+    // Recurring transactions
+    recurring: 'Recurring',
+    daily: 'Daily',
+    weekly: 'Weekly',
+    monthly: 'Monthly',
+
+    // Search & filter
+    searchTransactions: 'Search transactions...',
   },
 
   zh: {
@@ -223,6 +242,25 @@ export const translations = {
     quickQ4: '分析我的消费习惯',
     aiError: '获取回复失败，请检查设置中的 API 密钥。',
     aiLanguageInstruction: '请用中文（简体）回答。',
+
+    // Transaction editing
+    editTransaction: '编辑交易',
+    updateTransaction: '更新交易',
+
+    // Budget limits
+    budgetLimits: '预算限额',
+    setBudget: '设置预算',
+    noBudgetsHint: '为每个分类输入月度限额（留空则删除）。',
+    noBudgetsSet: '暂未设置预算',
+
+    // Recurring transactions
+    recurring: '定期',
+    daily: '每天',
+    weekly: '每周',
+    monthly: '每月',
+
+    // Search & filter
+    searchTransactions: '搜索交易记录...',
   },
 } as const;
 

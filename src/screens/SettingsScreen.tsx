@@ -54,14 +54,38 @@ function SettingRow({
 export default function SettingsScreen() {
   const { state, dispatch } = useApp();
   const t = useTranslation();
-  const { currency, categories, aiProvider, aiKey, language } = state;
+  const { currency, categories, aiProvider, aiKey, language, budgets } = state;
 
   const [catModalVisible, setCatModalVisible] = useState(false);
+  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
   const [newCat, setNewCat] = useState('');
   const [keyInput, setKeyInput] = useState(aiKey);
   const [showKey, setShowKey] = useState(false);
+  const [localBudgets, setLocalBudgets] = useState<Record<string, string>>({});
 
   const selectedProvider = AI_PROVIDERS.find(p => p.id === aiProvider) || AI_PROVIDERS[0];
+  const budgetCount = Object.values(budgets).filter(v => v > 0).length;
+
+  function handleOpenBudgetModal() {
+    const initial: Record<string, string> = {};
+    categories.forEach(cat => {
+      initial[cat] = budgets[cat] ? budgets[cat].toString() : '';
+    });
+    setLocalBudgets(initial);
+    setBudgetModalVisible(true);
+  }
+
+  function handleSaveBudgets() {
+    categories.forEach(cat => {
+      const val = parseFloat(localBudgets[cat] || '');
+      if (val > 0) {
+        dispatch({ type: 'SET_BUDGET', payload: { category: cat, amount: val } });
+      } else if (budgets[cat]) {
+        dispatch({ type: 'DELETE_BUDGET', payload: cat });
+      }
+    });
+    setBudgetModalVisible(false);
+  }
 
   function handleClearData() {
     Alert.alert(
@@ -136,6 +160,16 @@ export default function SettingsScreen() {
           label={t('manageCategories')}
           value={t('categoriesCount')(categories.length)}
           onPress={() => setCatModalVisible(true)}
+        />
+      </View>
+
+      <Text style={styles.sectionTitle}>{t('budgetLimits')}</Text>
+      <View style={styles.section}>
+        <SettingRow
+          icon="wallet-outline"
+          label={t('setBudget')}
+          value={budgetCount > 0 ? t('categoriesCount')(budgetCount) : undefined}
+          onPress={handleOpenBudgetModal}
         />
       </View>
 
@@ -217,6 +251,7 @@ export default function SettingsScreen() {
 
       <Text style={styles.version}>{t('version')}</Text>
 
+      {/* Categories modal */}
       <Modal visible={catModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
@@ -249,6 +284,38 @@ export default function SettingsScreen() {
                 </View>
               ))}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Budget modal */}
+      <Modal visible={budgetModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('budgetLimits')}</Text>
+              <TouchableOpacity onPress={() => setBudgetModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#636E72" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.budgetHint}>{t('noBudgetsHint')}</Text>
+            <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
+              {categories.map(cat => (
+                <View key={cat} style={styles.budgetInputRow}>
+                  <Text style={styles.budgetCatName}>{cat}</Text>
+                  <TextInput
+                    style={styles.budgetInput}
+                    placeholder="0"
+                    keyboardType="decimal-pad"
+                    value={localBudgets[cat] || ''}
+                    onChangeText={val => setLocalBudgets(prev => ({ ...prev, [cat]: val }))}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.saveKeyBtn} onPress={handleSaveBudgets}>
+              <Text style={styles.saveKeyBtnText}>{t('setBudget')}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -382,4 +449,23 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F0F0F5',
   },
   catName: { flex: 1, fontSize: 15, color: '#2D3436' },
+  budgetHint: { fontSize: 12, color: '#B2BEC3', marginBottom: 12 },
+  budgetInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F5',
+  },
+  budgetCatName: { flex: 1, fontSize: 15, color: '#2D3436' },
+  budgetInput: {
+    width: 90,
+    borderWidth: 1,
+    borderColor: '#DFE6E9',
+    borderRadius: 8,
+    padding: 8,
+    fontSize: 14,
+    textAlign: 'right',
+    backgroundColor: '#F8F9FA',
+  },
 });

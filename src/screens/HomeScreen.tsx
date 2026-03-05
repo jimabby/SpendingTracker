@@ -15,6 +15,7 @@ import { format, startOfMonth, endOfMonth, isWithinInterval, subMonths } from 'd
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHART_WIDTH = SCREEN_WIDTH - 48;
+const BAR_WIDTH = CHART_WIDTH - 32;
 
 const chartConfig = {
   backgroundGradientFrom: '#fff',
@@ -28,7 +29,7 @@ const chartConfig = {
 export default function HomeScreen() {
   const { state } = useApp();
   const t = useTranslation();
-  const { transactions, currency } = state;
+  const { transactions, currency, budgets } = state;
 
   const now = new Date();
   const monthStart = startOfMonth(now);
@@ -48,14 +49,18 @@ export default function HomeScreen() {
 
   const balance = totalIncome - totalExpense;
 
-  const pieData = useMemo(() => {
+  const categorySpend = useMemo(() => {
     const map: Record<string, number> = {};
     thisMonth
-      .filter(t => t.type === 'expense')
-      .forEach(t => {
-        map[t.category] = (map[t.category] || 0) + t.amount;
+      .filter(tx => tx.type === 'expense')
+      .forEach(tx => {
+        map[tx.category] = (map[tx.category] || 0) + tx.amount;
       });
-    return Object.entries(map).map(([name, amount]) => ({
+    return map;
+  }, [thisMonth]);
+
+  const pieData = useMemo(() => {
+    return Object.entries(categorySpend).map(([name, amount]) => ({
       name: name.length > 12 ? name.slice(0, 12) + '…' : name,
       population: amount,
       color: CATEGORY_COLORS[name] || '#B2BEC3',
@@ -142,6 +147,30 @@ export default function HomeScreen() {
         />
       </View>
 
+      {Object.keys(budgets).length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t('budgetLimits')}</Text>
+          {Object.entries(budgets).map(([cat, limit]) => {
+            const spent = categorySpend[cat] || 0;
+            const pct = limit > 0 ? spent / limit : 0;
+            const barColor = pct >= 1 ? '#D63031' : pct >= 0.8 ? '#E17055' : '#6C5CE7';
+            return (
+              <View key={cat} style={styles.budgetRow}>
+                <View style={styles.budgetLabelRow}>
+                  <Text style={styles.budgetCat}>{cat}</Text>
+                  <Text style={[styles.budgetAmt, { color: pct >= 1 ? '#D63031' : '#636E72' }]}>
+                    {fmt(spent)} / {fmt(limit)}
+                  </Text>
+                </View>
+                <View style={styles.progressBg}>
+                  <View style={[styles.progressFill, { width: Math.min(pct, 1) * BAR_WIDTH, backgroundColor: barColor }]} />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {transactions.length === 0 && (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>{t('noTransactionsYet')}</Text>
@@ -203,4 +232,10 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', marginTop: 32 },
   emptyText: { fontSize: 16, color: '#636E72', fontWeight: '500' },
   emptyHint: { fontSize: 13, color: '#B2BEC3', marginTop: 4, textAlign: 'center' },
+  budgetRow: { marginBottom: 14 },
+  budgetLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  budgetCat: { fontSize: 13, fontWeight: '600', color: '#2D3436' },
+  budgetAmt: { fontSize: 12 },
+  progressBg: { height: 8, backgroundColor: '#F0F0F5', borderRadius: 4, overflow: 'hidden' },
+  progressFill: { height: 8, borderRadius: 4 },
 });

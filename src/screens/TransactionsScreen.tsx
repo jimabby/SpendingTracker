@@ -11,12 +11,13 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../hooks/useTranslation';
-import { Transaction } from '../types';
+import { Transaction, RecurringFrequency } from '../types';
 import { CATEGORY_COLORS, CATEGORY_ICONS } from '../constants/categories';
 import { format } from 'date-fns';
 
@@ -28,10 +29,12 @@ function TransactionItem({
   item,
   currency,
   onDelete,
+  onEdit,
 }: {
   item: Transaction;
   currency: string;
   onDelete: (id: string) => void;
+  onEdit: (item: Transaction) => void;
 }) {
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
@@ -53,6 +56,9 @@ function TransactionItem({
       <Text style={[styles.itemAmount, { color: item.type === 'income' ? '#00B894' : '#D63031' }]}>
         {item.type === 'income' ? '+' : '-'}{fmt(item.amount)}
       </Text>
+      <TouchableOpacity onPress={() => onEdit(item)} style={styles.editBtn}>
+        <Ionicons name="pencil-outline" size={16} color="#B2BEC3" />
+      </TouchableOpacity>
       <TouchableOpacity onPress={() => onDelete(item.id)} style={styles.deleteBtn}>
         <Ionicons name="trash-outline" size={18} color="#B2BEC3" />
       </TouchableOpacity>
@@ -60,24 +66,65 @@ function TransactionItem({
   );
 }
 
+const FREQ_OPTIONS: RecurringFrequency[] = ['daily', 'weekly', 'monthly'];
+
 export default function TransactionsScreen() {
   const { state, dispatch } = useApp();
   const t = useTranslation();
   const { transactions, currency, categories } = state;
 
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
   const [type, setType] = useState<'expense' | 'income'>('expense');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [note, setNote] = useState('');
   const [filterMonth, setFilterMonth] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [frequency, setFrequency] = useState<RecurringFrequency>('monthly');
 
   const filtered = useMemo(() => {
-    if (!filterMonth) return transactions;
-    return transactions.filter(t => t.date.startsWith(filterMonth));
-  }, [transactions, filterMonth]);
+    let result = transactions;
+    if (filterMonth) {
+      result = result.filter(tx => tx.date.startsWith(filterMonth));
+    }
+    if (filterCategory) {
+      result = result.filter(tx => tx.category === filterCategory);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      result = result.filter(
+        tx =>
+          tx.note.toLowerCase().includes(q) ||
+          tx.category.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [transactions, filterMonth, filterCategory, searchQuery]);
 
-  function handleAdd() {
+  function resetForm() {
+    setAmount('');
+    setCategory('');
+    setNote('');
+    setType('expense');
+    setEditingTx(null);
+    setIsRecurring(false);
+    setFrequency('monthly');
+    setModalVisible(false);
+  }
+
+  function handleEdit(tx: Transaction) {
+    setEditingTx(tx);
+    setType(tx.type);
+    setAmount(tx.amount.toString());
+    setCategory(tx.category);
+    setNote(tx.note);
+    setModalVisible(true);
+  }
+
+  function handleSave() {
     const parsed = parseFloat(amount);
     if (!parsed || parsed <= 0) {
       Alert.alert(t('invalidAmount'), t('enterValidAmount'));
@@ -87,20 +134,37 @@ export default function TransactionsScreen() {
       Alert.alert(t('selectCategory'), t('pleaseSelectCategory'));
       return;
     }
-    const tx: Transaction = {
-      id: generateId(),
-      amount: parsed,
-      type,
-      category,
-      note,
-      date: new Date().toISOString(),
-    };
-    dispatch({ type: 'ADD_TRANSACTION', payload: tx });
-    setAmount('');
-    setCategory('');
-    setNote('');
-    setType('expense');
-    setModalVisible(false);
+    if (editingTx) {
+      dispatch({
+        type: 'UPDATE_TRANSACTION',
+        payload: { ...editingTx, amount: parsed, type, category, note },
+      });
+    } else {
+      const tx: Transaction = {
+        id: generateId(),
+        amount: parsed,
+        type,
+        category,
+        note,
+        date: new Date().toISOString(),
+      };
+      dispatch({ type: 'ADD_TRANSACTION', payload: tx });
+      if (isRecurring) {
+        dispatch({
+          type: 'ADD_RECURRING',
+          payload: {
+            id: generateId(),
+            amount: parsed,
+            type,
+            category,
+            note,
+            frequency,
+            lastAddedDate: new Date().toISOString(),
+          },
+        });
+      }
+    }
+    resetForm();
   }
 
   function handleDelete(id: string) {
@@ -111,7 +175,7 @@ export default function TransactionsScreen() {
   }
 
   const months = useMemo(() => {
-    const set = new Set(transactions.map(t => t.date.slice(0, 7)));
+    const set = new Set(transactions.map(tx => tx.date.slice(0, 7)));
     return Array.from(set).sort().reverse();
   }, [transactions]);
 
@@ -124,6 +188,24 @@ export default function TransactionsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Search bar */}
+      <View style={styles.searchRow}>
+        <Ionicons name="search-outline" size={18} color="#B2BEC3" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder={t('searchTransactions')}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          clearButtonMode="while-editing"
+        />
+        {searchQuery.length > 0 && Platform.OS === 'android' && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={18} color="#B2BEC3" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Month filter */}
       {months.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={styles.filterContent}>
           <TouchableOpacity
@@ -146,11 +228,30 @@ export default function TransactionsScreen() {
         </ScrollView>
       )}
 
+      {/* Category filter */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar} contentContainerStyle={styles.filterContent}>
+        <TouchableOpacity
+          style={[styles.filterChip, !filterCategory && styles.filterChipActive]}
+          onPress={() => setFilterCategory('')}
+        >
+          <Text style={[styles.filterChipText, !filterCategory && styles.filterChipTextActive]}>{t('all')}</Text>
+        </TouchableOpacity>
+        {categories.map(cat => (
+          <TouchableOpacity
+            key={cat}
+            style={[styles.filterChip, filterCategory === cat && styles.filterChipActive]}
+            onPress={() => setFilterCategory(filterCategory === cat ? '' : cat)}
+          >
+            <Text style={[styles.filterChipText, filterCategory === cat && styles.filterChipTextActive]}>{cat}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       <FlatList
         data={filtered}
         keyExtractor={item => item.id}
         renderItem={({ item }) => (
-          <TransactionItem item={item} currency={currency} onDelete={handleDelete} />
+          <TransactionItem item={item} currency={currency} onDelete={handleDelete} onEdit={handleEdit} />
         )}
         contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : { padding: 16, gap: 10 }}
         ListEmptyComponent={
@@ -162,62 +263,91 @@ export default function TransactionsScreen() {
         }
       />
 
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={resetForm}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('addTransaction')}</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <Text style={styles.modalTitle}>{editingTx ? t('editTransaction') : t('addTransaction')}</Text>
+              <TouchableOpacity onPress={resetForm}>
                 <Ionicons name="close" size={24} color="#636E72" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.typeToggle}>
-              <TouchableOpacity
-                style={[styles.typeBtn, type === 'expense' && styles.typeBtnActive]}
-                onPress={() => setType('expense')}
-              >
-                <Text style={[styles.typeBtnText, type === 'expense' && styles.typeBtnTextActive]}>{t('expense')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeBtn, type === 'income' && styles.typeBtnIncomeActive]}
-                onPress={() => setType('income')}
-              >
-                <Text style={[styles.typeBtnText, type === 'income' && styles.typeBtnTextActive]}>{t('incomeType')}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TextInput
-              style={styles.input}
-              placeholder={t('amount')}
-              keyboardType="decimal-pad"
-              value={amount}
-              onChangeText={setAmount}
-            />
-
-            <TextInput
-              style={styles.input}
-              placeholder={t('noteOptional')}
-              value={note}
-              onChangeText={setNote}
-            />
-
-            <Text style={styles.inputLabel}>{t('category')}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
-              {categories.map(cat => (
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={styles.typeToggle}>
                 <TouchableOpacity
-                  key={cat}
-                  style={[styles.catChip, category === cat && { backgroundColor: CATEGORY_COLORS[cat] || '#6C5CE7' }]}
-                  onPress={() => setCategory(cat)}
+                  style={[styles.typeBtn, type === 'expense' && styles.typeBtnActive]}
+                  onPress={() => setType('expense')}
                 >
-                  <Text style={[styles.catChipText, category === cat && styles.catChipTextActive]}>{cat}</Text>
+                  <Text style={[styles.typeBtnText, type === 'expense' && styles.typeBtnTextActive]}>{t('expense')}</Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+                <TouchableOpacity
+                  style={[styles.typeBtn, type === 'income' && styles.typeBtnIncomeActive]}
+                  onPress={() => setType('income')}
+                >
+                  <Text style={[styles.typeBtnText, type === 'income' && styles.typeBtnTextActive]}>{t('incomeType')}</Text>
+                </TouchableOpacity>
+              </View>
 
-            <TouchableOpacity style={styles.saveBtn} onPress={handleAdd}>
-              <Text style={styles.saveBtnText}>{t('saveTransaction')}</Text>
-            </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                placeholder={t('amount')}
+                keyboardType="decimal-pad"
+                value={amount}
+                onChangeText={setAmount}
+              />
+
+              <TextInput
+                style={styles.input}
+                placeholder={t('noteOptional')}
+                value={note}
+                onChangeText={setNote}
+              />
+
+              <Text style={styles.inputLabel}>{t('category')}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
+                {categories.map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.catChip, category === cat && { backgroundColor: CATEGORY_COLORS[cat] || '#6C5CE7' }]}
+                    onPress={() => setCategory(cat)}
+                  >
+                    <Text style={[styles.catChipText, category === cat && styles.catChipTextActive]}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {!editingTx && (
+                <>
+                  <View style={styles.recurringRow}>
+                    <Text style={styles.inputLabel}>{t('recurring')}</Text>
+                    <Switch
+                      value={isRecurring}
+                      onValueChange={setIsRecurring}
+                      trackColor={{ false: '#DFE6E9', true: '#A29BFE' }}
+                      thumbColor={isRecurring ? '#6C5CE7' : '#B2BEC3'}
+                    />
+                  </View>
+                  {isRecurring && (
+                    <View style={styles.freqRow}>
+                      {FREQ_OPTIONS.map(f => (
+                        <TouchableOpacity
+                          key={f}
+                          style={[styles.catChip, frequency === f && styles.freqChipActive]}
+                          onPress={() => setFrequency(f)}
+                        >
+                          <Text style={[styles.catChipText, frequency === f && styles.catChipTextActive]}>{t(f as any)}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </>
+              )}
+
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+                <Text style={styles.saveBtnText}>{editingTx ? t('updateTransaction') : t('saveTransaction')}</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -243,8 +373,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#DFE6E9',
+  },
+  searchIcon: { marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 15, paddingVertical: 10, color: '#2D3436' },
   filterBar: { maxHeight: 44 },
-  filterContent: { paddingHorizontal: 16, gap: 8 },
+  filterContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 4 },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 6,
@@ -275,6 +418,7 @@ const styles = StyleSheet.create({
   itemNote: { fontSize: 12, color: '#636E72', marginTop: 2 },
   itemDate: { fontSize: 11, color: '#B2BEC3', marginTop: 1 },
   itemAmount: { fontSize: 16, fontWeight: '700' },
+  editBtn: { padding: 4 },
   deleteBtn: { padding: 4 },
   emptyContainer: { flex: 1, justifyContent: 'center' },
   empty: { alignItems: 'center', paddingTop: 80 },
@@ -287,6 +431,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 40,
+    maxHeight: '90%',
   },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 20, fontWeight: '700', color: '#2D3436' },
@@ -312,7 +457,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
   },
   inputLabel: { fontSize: 13, fontWeight: '600', color: '#636E72', marginBottom: 8 },
-  catScroll: { marginBottom: 20 },
+  catScroll: { marginBottom: 16 },
   catChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -322,11 +467,25 @@ const styles = StyleSheet.create({
   },
   catChipText: { fontSize: 13, color: '#636E72' },
   catChipTextActive: { color: '#fff', fontWeight: '600' },
+  recurringRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  freqRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  freqChipActive: { backgroundColor: '#6C5CE7' },
   saveBtn: {
     backgroundColor: '#6C5CE7',
     borderRadius: 14,
     padding: 16,
     alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
   },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

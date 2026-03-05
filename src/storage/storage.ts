@@ -12,6 +12,8 @@ export const defaultState: AppState = {
   aiProvider: 'chatgpt',
   aiKey: '',
   language: 'en',
+  budgets: {},
+  recurringTransactions: [],
 };
 
 export async function loadState(): Promise<AppState> {
