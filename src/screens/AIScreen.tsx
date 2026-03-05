@@ -11,12 +11,16 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import * as MailComposer from 'expo-mail-composer';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../hooks/useTranslation';
-import { sendAIMessage, ChatMessage, AIProvider } from '../utils/ai';
+import { sendAIMessageWithTools, ChatMessage, AIProvider } from '../utils/ai';
+import { TOOL_DEFINITIONS, executeToolCall } from '../utils/aiTools';
 import { translations } from '../i18n/translations';
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 
@@ -27,8 +31,14 @@ const PROVIDER_LABELS: Record<string, string> = {
   deepseek: 'DeepSeek',
 };
 
+interface DisplayMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  actions?: string[];
+}
+
 function buildContext(state: ReturnType<typeof useApp>['state']): string {
-  const { transactions, currency } = state;
+  const { transactions, cards, currency } = state;
   const now = new Date();
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
@@ -37,20 +47,13 @@ function buildContext(state: ReturnType<typeof useApp>['state']): string {
     isWithinInterval(new Date(t.date), { start: monthStart, end: monthEnd })
   );
 
-  const totalIncome = thisMonth
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalExpense = thisMonth
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const totalIncome = thisMonth.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const totalExpense = thisMonth.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
   const categoryMap: Record<string, number> = {};
-  thisMonth
-    .filter(t => t.type === 'expense')
-    .forEach(t => {
-      categoryMap[t.category] = (categoryMap[t.category] || 0) + t.amount;
-    });
+  thisMonth.filter(t => t.type === 'expense').forEach(t => {
+    categoryMap[t.category] = (categoryMap[t.category] || 0) + t.amount;
+  });
 
   const topCategories = Object.entries(categoryMap)
     .sort(([, a], [, b]) => b - a)
@@ -58,17 +61,18 @@ function buildContext(state: ReturnType<typeof useApp>['state']): string {
     .map(([cat, amount]) => `${cat}: ${amount.toFixed(2)} ${currency}`)
     .join(', ') || 'No expenses yet';
 
-  const recentTxs = transactions
-    .slice(0, 5)
-    .map(t =>
-      `${t.date.slice(0, 10)} ${t.type === 'expense' ? '-' : '+'}${t.amount} ${currency} (${t.category}${t.note ? ', ' + t.note : ''})`
-    )
-    .join('\n') || 'No transactions yet';
+  const txList = transactions.slice(0, 30).map(t =>
+    `[id:${t.id}] ${t.date.slice(0, 10)} | ${t.type} | ${t.amount.toFixed(2)} ${currency} | ${t.category}${t.note ? ' | ' + t.note : ''}`
+  ).join('\n') || 'No transactions yet';
+
+  const cardList = cards.map(c =>
+    `[id:${c.id}] ${c.name} | ···· ${c.lastFour} | due: ${c.dueDate}`
+  ).join('\n') || 'No cards';
 
   const lang = (state.language === 'zh' ? 'zh' : 'en') as 'en' | 'zh';
   const langInstruction = translations[lang].aiLanguageInstruction;
 
-  return `You are Pockyt, a friendly AI financial assistant built into the Pockyt spending tracker app. Be concise, helpful, and encouraging. Use the user's actual spending data to give personalized advice. Keep responses short and clear. ${langInstruction}
+  return `You are Pockyt, a friendly AI financial assistant built into the Pockyt spending tracker app. Be concise, helpful, and encouraging. You can perform actions like adding/deleting transactions and cards, changing the app language, or sending a CSV export by email — use the available tools when the user asks you to. ${langInstruction}
 
 Current month: ${format(now, 'MMMM yyyy')}
 Currency: ${currency}
@@ -76,9 +80,13 @@ This month's income: ${totalIncome.toFixed(2)} ${currency}
 This month's expenses: ${totalExpense.toFixed(2)} ${currency}
 Net balance: ${(totalIncome - totalExpense).toFixed(2)} ${currency}
 Top spending categories: ${topCategories}
-Recent transactions:
-${recentTxs}
-Total transactions in history: ${transactions.length}`;
+Total transactions in history: ${transactions.length}
+
+Transactions (use IDs for delete_transaction, most recent first):
+${txList}
+
+Cards (use IDs for delete_card):
+${cardList}`;
 }
 
 interface Props {
@@ -87,10 +95,10 @@ interface Props {
 }
 
 export default function AIScreen({ visible, onClose }: Props) {
-  const { state } = useApp();
+  const { state, dispatch } = useApp();
   const t = useTranslation();
   const insets = useSafeAreaInsets();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
@@ -98,20 +106,77 @@ export default function AIScreen({ visible, onClose }: Props) {
   const provider = (state.aiProvider || 'chatgpt') as AIProvider;
   const apiKey = state.aiKey || '';
 
+  async function handleSendEmail(email: string): Promise<void> {
+    const { transactions } = state;
+    const header = 'Date,Type,Category,Amount,Note\n';
+    const rows = transactions.map(tx => {
+      const date = format(new Date(tx.date), 'yyyy-MM-dd');
+      const note = (tx.note || '').replace(/"/g, '""');
+      return `${date},${tx.type},${tx.category},${tx.amount},"${note}"`;
+    }).join('\n');
+    const csv = header + rows;
+
+    const isAvailable = await MailComposer.isAvailableAsync();
+    if (!isAvailable) {
+      const subject = encodeURIComponent('Pockyt Transactions Export');
+      const body = encodeURIComponent(csv);
+      await Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
+      return;
+    }
+
+    try {
+      const fileName = `pockyt_export_${format(new Date(), 'yyyyMMdd')}.csv`;
+      const filePath = (FileSystem.documentDirectory ?? FileSystem.cacheDirectory ?? '') + fileName;
+      await FileSystem.writeAsStringAsync(filePath, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await MailComposer.composeAsync({
+        recipients: [email],
+        subject: 'Pockyt Transactions Export',
+        body: 'Please find your Pockyt transaction history attached.',
+        attachments: [filePath],
+      });
+    } catch {
+      await MailComposer.composeAsync({
+        recipients: [email],
+        subject: 'Pockyt Transactions Export',
+        body: csv,
+      });
+    }
+  }
+
   async function sendMessage(text: string) {
     if (!text.trim() || loading) return;
 
-    const userMsg: ChatMessage = { role: 'user', content: text.trim() };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    const userMsg: DisplayMessage = { role: 'user', content: text.trim() };
+    const displayHistory = [...messages, userMsg];
+    setMessages(displayHistory);
     setInput('');
     setLoading(true);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
+    const apiMessages: ChatMessage[] = displayHistory.map(m => ({ role: m.role, content: m.content }));
+    const collectedActions: string[] = [];
+
     try {
       const systemPrompt = buildContext(state);
-      const reply = await sendAIMessage(provider, apiKey, newMessages, systemPrompt);
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      const reply = await sendAIMessageWithTools(
+        provider,
+        apiKey,
+        apiMessages,
+        systemPrompt,
+        TOOL_DEFINITIONS,
+        async (name, args) => {
+          const result = await executeToolCall(name, args, dispatch, state, handleSendEmail);
+          collectedActions.push(result.summary);
+          return result.ok ? `Success: ${result.summary}` : `Failed: ${result.summary}`;
+        }
+      );
+
+      const assistantMsg: DisplayMessage = {
+        role: 'assistant',
+        content: reply,
+        actions: collectedActions.length > 0 ? collectedActions : undefined,
+      };
+      setMessages(prev => [...prev, assistantMsg]);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (err: any) {
       Alert.alert('Error', err.message || t('aiError'));
@@ -173,25 +238,33 @@ export default function AIScreen({ visible, onClose }: Props) {
             )}
 
             {messages.map((msg, i) => (
-              <View
-                key={i}
-                style={[styles.msgRow, msg.role === 'user' ? styles.msgRowUser : styles.msgRowAI]}
-              >
-                {msg.role === 'assistant' && (
-                  <View style={styles.msgAvatar}>
-                    <Ionicons name="sparkles" size={13} color="#6C5CE7" />
+              <View key={i}>
+                <View style={[styles.msgRow, msg.role === 'user' ? styles.msgRowUser : styles.msgRowAI]}>
+                  {msg.role === 'assistant' && (
+                    <View style={styles.msgAvatar}>
+                      <Ionicons name="sparkles" size={13} color="#6C5CE7" />
+                    </View>
+                  )}
+                  <View style={[styles.msgBubble, msg.role === 'user' ? styles.msgBubbleUser : styles.msgBubbleAI]}>
+                    <Text style={[styles.msgText, msg.role === 'user' ? styles.msgTextUser : styles.msgTextAI]}>
+                      {msg.content}
+                    </Text>
+                  </View>
+                </View>
+
+                {msg.actions && msg.actions.length > 0 && (
+                  <View style={styles.actionsRow}>
+                    <View style={styles.actionsAvatarSpacer} />
+                    <View style={styles.actionsBubble}>
+                      {msg.actions.map((action, j) => (
+                        <View key={j} style={styles.actionLine}>
+                          <Ionicons name="checkmark-circle" size={14} color="#00B894" />
+                          <Text style={styles.actionText}>{action}</Text>
+                        </View>
+                      ))}
+                    </View>
                   </View>
                 )}
-                <View
-                  style={[
-                    styles.msgBubble,
-                    msg.role === 'user' ? styles.msgBubbleUser : styles.msgBubbleAI,
-                  ]}
-                >
-                  <Text style={[styles.msgText, msg.role === 'user' ? styles.msgTextUser : styles.msgTextAI]}>
-                    {msg.content}
-                  </Text>
-                </View>
               </View>
             ))}
 
@@ -284,13 +357,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   welcomeTitle: { fontSize: 22, fontWeight: '700', color: '#2D3436', marginBottom: 8 },
-  welcomeText: {
-    fontSize: 14,
-    color: '#636E72',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
-  },
+  welcomeText: { fontSize: 14, color: '#636E72', textAlign: 'center', lineHeight: 20, marginBottom: 20 },
   quickQuestions: { width: '100%', gap: 8 },
   quickChip: {
     backgroundColor: '#fff',
@@ -301,12 +368,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   quickChipText: { fontSize: 14, color: '#2D3436' },
-  msgRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    marginVertical: 4,
-  },
+  msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginVertical: 4 },
   msgRowUser: { justifyContent: 'flex-end' },
   msgRowAI: { justifyContent: 'flex-start' },
   msgAvatar: {
@@ -318,12 +380,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  msgBubble: {
-    maxWidth: '78%',
-    borderRadius: 18,
-    padding: 12,
-    paddingHorizontal: 14,
-  },
+  msgBubble: { maxWidth: '78%', borderRadius: 18, padding: 12, paddingHorizontal: 14 },
   msgBubbleUser: { backgroundColor: '#6C5CE7', borderBottomRightRadius: 4 },
   msgBubbleAI: {
     backgroundColor: '#fff',
@@ -337,6 +394,20 @@ const styles = StyleSheet.create({
   msgText: { fontSize: 15, lineHeight: 21 },
   msgTextUser: { color: '#fff' },
   msgTextAI: { color: '#2D3436' },
+  actionsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 2, marginBottom: 4 },
+  actionsAvatarSpacer: { width: 28, flexShrink: 0 },
+  actionsBubble: {
+    backgroundColor: '#EAFFEA',
+    borderWidth: 1,
+    borderColor: '#B2DFDB',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 4,
+    maxWidth: '78%',
+  },
+  actionLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actionText: { fontSize: 13, color: '#00B894', flex: 1 },
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
