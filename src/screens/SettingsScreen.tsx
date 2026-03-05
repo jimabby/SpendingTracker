@@ -8,7 +8,15 @@ import {
   Alert,
   TextInput,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  Linking,
+  ActivityIndicator,
 } from 'react-native';
+import { format } from 'date-fns';
+import * as FileSystem from 'expo-file-system';
+import * as MailComposer from 'expo-mail-composer';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
@@ -54,10 +62,13 @@ function SettingRow({
 export default function SettingsScreen() {
   const { state, dispatch } = useApp();
   const t = useTranslation();
-  const { currency, categories, aiProvider, aiKey, language, budgets } = state;
+  const { currency, categories, aiProvider, aiKey, language, budgets, transactions } = state;
 
   const [catModalVisible, setCatModalVisible] = useState(false);
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
+  const [emailModalVisible, setEmailModalVisible] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
   const [newCat, setNewCat] = useState('');
   const [keyInput, setKeyInput] = useState(aiKey);
   const [showKey, setShowKey] = useState(false);
@@ -85,6 +96,76 @@ export default function SettingsScreen() {
       }
     });
     setBudgetModalVisible(false);
+  }
+
+  function handleExportCSV() {
+    if (transactions.length === 0) {
+      Alert.alert(t('noDataToExport'));
+      return;
+    }
+    setEmailInput('');
+    setEmailModalVisible(true);
+  }
+
+  async function handleSendEmail() {
+    if (emailSending) return; // guard against double-tap
+    const email = emailInput.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      Alert.alert(t('invalidEmail'), t('enterValidEmail'));
+      return;
+    }
+
+    const header = 'Date,Type,Category,Amount,Note\n';
+    const rows = transactions
+      .map(tx => {
+        const date = format(new Date(tx.date), 'yyyy-MM-dd');
+        const note = (tx.note || '').replace(/"/g, '""');
+        return `${date},${tx.type},${tx.category},${tx.amount},"${note}"`;
+      })
+      .join('\n');
+    const csv = header + rows;
+
+    // Keep sending=true until done so button stays disabled
+    setEmailSending(true);
+    setEmailModalVisible(false);
+
+    // Wait for modal dismiss animation to finish — iOS cannot present
+    // the mail composer while another view controller is transitioning
+    await new Promise(resolve => setTimeout(resolve, 700));
+
+    try {
+      const isAvailable = await MailComposer.isAvailableAsync();
+      if (!isAvailable) {
+        const subject = encodeURIComponent('Pockyt Transactions Export');
+        const body = encodeURIComponent(csv);
+        await Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
+        return;
+      }
+
+      // Try to attach the CSV as a file
+      try {
+        const fileName = `pockyt_export_${format(new Date(), 'yyyyMMdd')}.csv`;
+        const filePath = (FileSystem.documentDirectory ?? FileSystem.cacheDirectory ?? '') + fileName;
+        await FileSystem.writeAsStringAsync(filePath, csv, { encoding: FileSystem.EncodingType.UTF8 });
+        await MailComposer.composeAsync({
+          recipients: [email],
+          subject: 'Pockyt Transactions Export',
+          body: 'Please find your Pockyt transaction history attached.',
+          attachments: [filePath],
+        });
+      } catch {
+        // File attachment failed — compose with CSV in body instead
+        await MailComposer.composeAsync({
+          recipients: [email],
+          subject: 'Pockyt Transactions Export',
+          body: csv,
+        });
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Could not open the mail client.');
+    } finally {
+      setEmailSending(false);
+    }
   }
 
   function handleClearData() {
@@ -233,6 +314,11 @@ export default function SettingsScreen() {
       <Text style={styles.sectionTitle}>{t('dataLabel')}</Text>
       <View style={styles.section}>
         <SettingRow
+          icon="download-outline"
+          label={t('exportCSV')}
+          onPress={handleExportCSV}
+        />
+        <SettingRow
           icon="trash-outline"
           label={t('clearAllData')}
           onPress={handleClearData}
@@ -286,6 +372,57 @@ export default function SettingsScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+
+      {/* Email export modal */}
+      <Modal visible={emailModalVisible} animationType="fade" transparent statusBarTranslucent>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.emailOverlay}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setEmailModalVisible(false)} />
+          <View style={styles.emailCard}>
+            <View style={styles.emailIconWrap}>
+              <Ionicons name="mail-outline" size={28} color="#6C5CE7" />
+            </View>
+            <Text style={styles.emailTitle}>{t('sendToEmail')}</Text>
+            <Text style={styles.emailSubtitle}>
+              {language === 'zh'
+                ? '导出的 CSV 文件将以附件形式发送'
+                : 'Your CSV file will be sent as an attachment'}
+            </Text>
+            <TextInput
+              style={styles.emailInput}
+              placeholder={t('enterEmail')}
+              placeholderTextColor="#B2BEC3"
+              value={emailInput}
+              onChangeText={setEmailInput}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="send"
+              onSubmitEditing={handleSendEmail}
+              autoFocus
+            />
+            <View style={styles.emailBtnRow}>
+              <TouchableOpacity
+                style={styles.emailCancelBtn}
+                onPress={() => setEmailModalVisible(false)}
+              >
+                <Text style={styles.emailCancelText}>{t('cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.emailSendBtn} onPress={handleSendEmail} disabled={emailSending}>
+                {emailSending
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <>
+                      <Ionicons name="send" size={16} color="#fff" style={{ marginRight: 6 }} />
+                      <Text style={styles.emailSendText}>{t('send')}</Text>
+                    </>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Budget modal */}
@@ -468,4 +605,65 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     backgroundColor: '#F8F9FA',
   },
+  emailOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 24,
+  },
+  emailCard: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  emailIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: '#EEE9FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emailTitle: { fontSize: 20, fontWeight: '700', color: '#2D3436', marginBottom: 6 },
+  emailSubtitle: { fontSize: 13, color: '#636E72', textAlign: 'center', marginBottom: 20, lineHeight: 18 },
+  emailInput: {
+    width: '100%',
+    borderWidth: 1.5,
+    borderColor: '#DFE6E9',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: '#2D3436',
+    backgroundColor: '#F8F9FA',
+    marginBottom: 20,
+  },
+  emailBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  emailCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: '#F0F0F5',
+    alignItems: 'center',
+  },
+  emailCancelText: { fontSize: 15, fontWeight: '600', color: '#636E72' },
+  emailSendBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: '#6C5CE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emailSendText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });

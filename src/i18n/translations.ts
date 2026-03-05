@@ -129,6 +129,20 @@ export const translations = {
 
     // Search & filter
     searchTransactions: 'Search transactions...',
+
+    // Yearly overview & drill-down
+    thisMonth: 'Month',
+    thisYear: 'Year',
+    annualExpenses: 'Annual Expenses (12 months)',
+    exportCSV: 'Export to CSV',
+    noDataToExport: 'No data to export',
+
+    // Email export
+    sendToEmail: 'Send to Email',
+    enterEmail: 'Email address',
+    send: 'Send',
+    invalidEmail: 'Invalid Email',
+    enterValidEmail: 'Please enter a valid email address.',
   },
 
   zh: {
@@ -261,6 +275,20 @@ export const translations = {
 
     // Search & filter
     searchTransactions: '搜索交易记录...',
+
+    // Yearly overview & drill-down
+    thisMonth: '月',
+    thisYear: '年',
+    annualExpenses: '年度支出（12个月）',
+    exportCSV: '导出为 CSV',
+    noDataToExport: '暂无数据可导出',
+
+    // Email export
+    sendToEmail: '发送到邮箱',
+    enterEmail: '邮箱地址',
+    send: '发送',
+    invalidEmail: '邮箱格式不正确',
+    enterValidEmail: '请输入有效的邮箱地址。',
   },
 } as const;
 

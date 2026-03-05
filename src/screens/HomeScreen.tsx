@@ -1,17 +1,21 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
   Dimensions,
+  TouchableOpacity,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BarChart, PieChart } from 'react-native-chart-kit';
+import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { CATEGORY_COLORS } from '../constants/categories';
-import { format, startOfMonth, endOfMonth, isWithinInterval, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, subMonths } from 'date-fns';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHART_WIDTH = SCREEN_WIDTH - 48;
@@ -30,154 +34,278 @@ export default function HomeScreen() {
   const { state } = useApp();
   const t = useTranslation();
   const { transactions, currency, budgets } = state;
+  const [period, setPeriod] = useState<'month' | 'year'>('month');
+  const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
   const now = new Date();
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
 
-  const thisMonth = transactions.filter(t =>
-    isWithinInterval(new Date(t.date), { start: monthStart, end: monthEnd })
+  const thisMonth = useMemo(
+    () =>
+      transactions.filter(tx =>
+        isWithinInterval(new Date(tx.date), { start: startOfMonth(now), end: endOfMonth(now) })
+      ),
+    [transactions]
   );
 
-  const totalIncome = thisMonth
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const thisYear = useMemo(
+    () =>
+      transactions.filter(tx =>
+        isWithinInterval(new Date(tx.date), { start: startOfYear(now), end: endOfYear(now) })
+      ),
+    [transactions]
+  );
 
-  const totalExpense = thisMonth
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const activePeriod = period === 'month' ? thisMonth : thisYear;
+
+  const totalIncome = useMemo(
+    () => activePeriod.filter(tx => tx.type === 'income').reduce((sum, tx) => sum + tx.amount, 0),
+    [activePeriod]
+  );
+
+  const totalExpense = useMemo(
+    () => activePeriod.filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0),
+    [activePeriod]
+  );
 
   const balance = totalIncome - totalExpense;
 
   const categorySpend = useMemo(() => {
     const map: Record<string, number> = {};
-    thisMonth
+    activePeriod
       .filter(tx => tx.type === 'expense')
       .forEach(tx => {
         map[tx.category] = (map[tx.category] || 0) + tx.amount;
       });
     return map;
-  }, [thisMonth]);
+  }, [activePeriod]);
 
-  const pieData = useMemo(() => {
-    return Object.entries(categorySpend).map(([name, amount]) => ({
-      name: name.length > 12 ? name.slice(0, 12) + '…' : name,
-      population: amount,
-      color: CATEGORY_COLORS[name] || '#B2BEC3',
-      legendFontColor: '#636E72',
-      legendFontSize: 11,
-    }));
-  }, [transactions]);
+  const categoryEntries = useMemo(
+    () => Object.entries(categorySpend).sort(([, a], [, b]) => b - a),
+    [categorySpend]
+  );
+
+  const pieData = useMemo(
+    () =>
+      categoryEntries.map(([name, amount]) => ({
+        name: name.length > 12 ? name.slice(0, 12) + '…' : name,
+        population: amount,
+        color: CATEGORY_COLORS[name] || '#B2BEC3',
+        legendFontColor: '#636E72',
+        legendFontSize: 11,
+      })),
+    [categoryEntries]
+  );
 
   const barData = useMemo(() => {
     const labels: string[] = [];
     const data: number[] = [];
-    for (let i = 5; i >= 0; i--) {
+    const count = period === 'year' ? 12 : 6;
+    for (let i = count - 1; i >= 0; i--) {
       const month = subMonths(now, i);
       const start = startOfMonth(month);
       const end = endOfMonth(month);
       const total = transactions
-        .filter(
-          t =>
-            t.type === 'expense' &&
-            isWithinInterval(new Date(t.date), { start, end })
-        )
-        .reduce((sum, t) => sum + t.amount, 0);
+        .filter(tx => tx.type === 'expense' && isWithinInterval(new Date(tx.date), { start, end }))
+        .reduce((sum, tx) => sum + tx.amount, 0);
       labels.push(format(month, 'MMM'));
       data.push(total);
     }
     return { labels, datasets: [{ data }] };
-  }, [transactions]);
+  }, [transactions, period]);
+
+  const drillTxs = useMemo(
+    () =>
+      drillCategory
+        ? activePeriod
+            .filter(tx => tx.category === drillCategory)
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        : [],
+    [drillCategory, activePeriod]
+  );
 
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
 
   return (
     <SafeAreaView style={styles.container}>
-    <ScrollView contentContainerStyle={styles.content}>
-      <Text style={styles.header}>{t('overview')}</Text>
-      <Text style={styles.month}>{format(now, 'MMMM yyyy')}</Text>
-
-      <View style={styles.summaryRow}>
-        <View style={[styles.card, styles.incomeCard]}>
-          <Text style={styles.cardLabel}>{t('income')}</Text>
-          <Text style={styles.cardAmount}>{fmt(totalIncome)}</Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.headerRow}>
+          <View>
+            <Text style={styles.header}>{t('overview')}</Text>
+            <Text style={styles.month}>
+              {period === 'month' ? format(now, 'MMMM yyyy') : format(now, 'yyyy')}
+            </Text>
+          </View>
+          <View style={styles.periodToggle}>
+            {(['month', 'year'] as const).map(p => (
+              <TouchableOpacity
+                key={p}
+                style={[styles.periodBtn, period === p && styles.periodBtnActive]}
+                onPress={() => setPeriod(p)}
+              >
+                <Text style={[styles.periodBtnText, period === p && styles.periodBtnTextActive]}>
+                  {t(p === 'month' ? 'thisMonth' : 'thisYear')}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-        <View style={[styles.card, styles.expenseCard]}>
-          <Text style={styles.cardLabel}>{t('expenses')}</Text>
-          <Text style={styles.cardAmount}>{fmt(totalExpense)}</Text>
+
+        <View style={styles.summaryRow}>
+          <View style={[styles.card, styles.incomeCard]}>
+            <Text style={styles.cardLabel}>{t('income')}</Text>
+            <Text style={styles.cardAmount}>{fmt(totalIncome)}</Text>
+          </View>
+          <View style={[styles.card, styles.expenseCard]}>
+            <Text style={styles.cardLabel}>{t('expenses')}</Text>
+            <Text style={styles.cardAmount}>{fmt(totalExpense)}</Text>
+          </View>
         </View>
-      </View>
 
-      <View style={styles.balanceCard}>
-        <Text style={styles.balanceLabel}>{t('netBalance')}</Text>
-        <Text style={[styles.balanceAmount, { color: balance >= 0 ? '#00B894' : '#D63031' }]}>
-          {fmt(balance)}
-        </Text>
-      </View>
+        <View style={styles.balanceCard}>
+          <Text style={styles.balanceLabel}>{t('netBalance')}</Text>
+          <Text style={[styles.balanceAmount, { color: balance >= 0 ? '#00B894' : '#D63031' }]}>
+            {fmt(balance)}
+          </Text>
+        </View>
 
-      {pieData.length > 0 && (
+        {pieData.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('spendingByCategory')}</Text>
+            <PieChart
+              data={pieData}
+              width={CHART_WIDTH}
+              height={180}
+              chartConfig={chartConfig}
+              accessor="population"
+              backgroundColor="transparent"
+              paddingLeft="0"
+              absolute={false}
+              hasLegend={false}
+            />
+            {categoryEntries.map(([cat, amount]) => (
+              <TouchableOpacity
+                key={cat}
+                style={styles.catRow}
+                onPress={() => setDrillCategory(cat)}
+              >
+                <View style={[styles.catDot, { backgroundColor: CATEGORY_COLORS[cat] || '#B2BEC3' }]} />
+                <Text style={styles.catName}>{cat}</Text>
+                <Text style={styles.catAmt}>{fmt(amount)}</Text>
+                <Ionicons name="chevron-forward" size={14} color="#B2BEC3" />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('spendingByCategory')}</Text>
-          <PieChart
-            data={pieData}
+          <Text style={styles.sectionTitle}>
+            {period === 'year' ? t('annualExpenses') : t('monthlyExpenses')}
+          </Text>
+          <BarChart
+            data={barData}
             width={CHART_WIDTH}
             height={180}
             chartConfig={chartConfig}
-            accessor="population"
-            backgroundColor="transparent"
-            paddingLeft="0"
-            absolute={false}
+            style={{ borderRadius: 12, marginLeft: -16 }}
+            showValuesOnTopOfBars={false}
+            fromZero
+            yAxisLabel=""
+            yAxisSuffix=""
           />
         </View>
-      )}
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('monthlyExpenses')}</Text>
-        <BarChart
-          data={barData}
-          width={CHART_WIDTH}
-          height={180}
-          chartConfig={chartConfig}
-          style={{ borderRadius: 12, marginLeft: -16 }}
-          showValuesOnTopOfBars={false}
-          fromZero
-          yAxisLabel=""
-          yAxisSuffix=""
-        />
-      </View>
+        {period === 'month' && Object.keys(budgets).length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('budgetLimits')}</Text>
+            {Object.entries(budgets).map(([cat, limit]) => {
+              const spent = categorySpend[cat] || 0;
+              const pct = limit > 0 ? spent / limit : 0;
+              const barColor = pct >= 1 ? '#D63031' : pct >= 0.8 ? '#E17055' : '#6C5CE7';
+              return (
+                <View key={cat} style={styles.budgetRow}>
+                  <View style={styles.budgetLabelRow}>
+                    <Text style={styles.budgetCat}>{cat}</Text>
+                    <Text style={[styles.budgetAmt, { color: pct >= 1 ? '#D63031' : '#636E72' }]}>
+                      {fmt(spent)} / {fmt(limit)}
+                    </Text>
+                  </View>
+                  <View style={styles.progressBg}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        { width: Math.min(pct, 1) * BAR_WIDTH, backgroundColor: barColor },
+                      ]}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
-      {Object.keys(budgets).length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('budgetLimits')}</Text>
-          {Object.entries(budgets).map(([cat, limit]) => {
-            const spent = categorySpend[cat] || 0;
-            const pct = limit > 0 ? spent / limit : 0;
-            const barColor = pct >= 1 ? '#D63031' : pct >= 0.8 ? '#E17055' : '#6C5CE7';
-            return (
-              <View key={cat} style={styles.budgetRow}>
-                <View style={styles.budgetLabelRow}>
-                  <Text style={styles.budgetCat}>{cat}</Text>
-                  <Text style={[styles.budgetAmt, { color: pct >= 1 ? '#D63031' : '#636E72' }]}>
-                    {fmt(spent)} / {fmt(limit)}
+        {transactions.length === 0 && (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>{t('noTransactionsYet')}</Text>
+            <Text style={styles.emptyHint}>{t('addFirstTransaction')}</Text>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Category drill-down modal */}
+      <Modal
+        visible={drillCategory !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setDrillCategory(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View
+                  style={[
+                    styles.catDot,
+                    { backgroundColor: CATEGORY_COLORS[drillCategory || ''] || '#B2BEC3' },
+                  ]}
+                />
+                <Text style={styles.modalTitle}>{drillCategory}</Text>
+              </View>
+              <TouchableOpacity onPress={() => setDrillCategory(null)}>
+                <Ionicons name="close" size={24} color="#636E72" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.drillTotal}>
+              {fmt(drillCategory ? categorySpend[drillCategory] || 0 : 0)}
+            </Text>
+            <FlatList
+              data={drillTxs}
+              keyExtractor={item => item.id}
+              style={{ maxHeight: 360 }}
+              renderItem={({ item }) => (
+                <View style={styles.drillRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.drillNote}>{item.note || item.category}</Text>
+                    <Text style={styles.drillDate}>{format(new Date(item.date), 'MMM d, yyyy')}</Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.drillAmt,
+                      { color: item.type === 'income' ? '#00B894' : '#D63031' },
+                    ]}
+                  >
+                    {item.type === 'income' ? '+' : '-'}
+                    {fmt(item.amount)}
                   </Text>
                 </View>
-                <View style={styles.progressBg}>
-                  <View style={[styles.progressFill, { width: Math.min(pct, 1) * BAR_WIDTH, backgroundColor: barColor }]} />
-                </View>
-              </View>
-            );
-          })}
+              )}
+              ListEmptyComponent={
+                <Text style={styles.drillEmpty}>No transactions</Text>
+              }
+            />
+          </View>
         </View>
-      )}
-
-      {transactions.length === 0 && (
-        <View style={styles.empty}>
-          <Text style={styles.emptyText}>{t('noTransactionsYet')}</Text>
-          <Text style={styles.emptyHint}>{t('addFirstTransaction')}</Text>
-        </View>
-      )}
-    </ScrollView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -185,8 +313,27 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   content: { padding: 16, paddingBottom: 32 },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
   header: { fontSize: 28, fontWeight: '700', color: '#2D3436' },
-  month: { fontSize: 14, color: '#636E72', marginTop: 2, marginBottom: 16 },
+  month: { fontSize: 14, color: '#636E72', marginTop: 2 },
+  periodToggle: {
+    flexDirection: 'row',
+    gap: 4,
+    backgroundColor: '#F0F0F5',
+    borderRadius: 20,
+    padding: 4,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  periodBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
+  periodBtnActive: { backgroundColor: '#6C5CE7' },
+  periodBtnText: { fontSize: 13, fontWeight: '600', color: '#636E72' },
+  periodBtnTextActive: { color: '#fff' },
   summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   card: {
     flex: 1,
@@ -229,6 +376,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#2D3436', marginBottom: 12 },
+  catRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F5',
+    gap: 8,
+  },
+  catDot: { width: 10, height: 10, borderRadius: 5 },
+  catName: { flex: 1, fontSize: 14, color: '#2D3436', fontWeight: '500' },
+  catAmt: { fontSize: 14, fontWeight: '600', color: '#2D3436' },
   empty: { alignItems: 'center', marginTop: 32 },
   emptyText: { fontSize: 16, color: '#636E72', fontWeight: '500' },
   emptyHint: { fontSize: 13, color: '#B2BEC3', marginTop: 4, textAlign: 'center' },
@@ -238,4 +396,31 @@ const styles = StyleSheet.create({
   budgetAmt: { fontSize: 12 },
   progressBg: { height: 8, backgroundColor: '#F0F0F5', borderRadius: 4, overflow: 'hidden' },
   progressFill: { height: 8, borderRadius: 4 },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#2D3436' },
+  drillTotal: { fontSize: 28, fontWeight: '700', color: '#D63031', marginBottom: 16 },
+  drillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F5',
+  },
+  drillNote: { fontSize: 14, color: '#2D3436', fontWeight: '500' },
+  drillDate: { fontSize: 12, color: '#B2BEC3', marginTop: 2 },
+  drillAmt: { fontSize: 15, fontWeight: '700' },
+  drillEmpty: { textAlign: 'center', color: '#B2BEC3', paddingVertical: 24 },
 });
