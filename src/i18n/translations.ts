@@ -170,7 +170,7 @@ export const translations = {
     thisMonth: 'Month',
     thisYear: 'Year',
     annualExpenses: 'Annual Expenses (12 months)',
-    exportCSV: 'Export to CSV',
+    exportPDF: 'Export to PDF',
     noDataToExport: 'No data to export',
 
     // Cards & notifications
@@ -394,7 +394,7 @@ export const translations = {
     thisMonth: '月',
     thisYear: '年',
     annualExpenses: '年度支出（12个月）',
-    exportCSV: '导出为 CSV',
+    exportPDF: '导出为 PDF',
     noDataToExport: '暂无数据可导出',
 
     // Cards & notifications

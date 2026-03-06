@@ -11,11 +11,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  Linking,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { format } from 'date-fns';
-import { File, Paths } from 'expo-file-system/next';
+import * as Print from 'expo-print';
 import * as MailComposer from 'expo-mail-composer';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -101,7 +101,7 @@ export default function SettingsScreen() {
     setBudgetModalVisible(false);
   }
 
-  function handleExportCSV() {
+  function handleExportPDF() {
     if (transactions.length === 0) {
       Alert.alert(t('noDataToExport'));
       return;
@@ -110,62 +110,135 @@ export default function SettingsScreen() {
     setEmailModalVisible(true);
   }
 
-  async function handleSendEmail() {
-    if (emailSending) return; // guard against double-tap
+  async function handleSendPDF() {
+    if (emailSending) return;
     const email = emailInput.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       Alert.alert(t('invalidEmail'), t('enterValidEmail'));
       return;
     }
-
-    const header = 'Date,Type,Category,Amount,Note\n';
-    const rows = transactions
-      .map(tx => {
-        const date = format(new Date(tx.date), 'yyyy-MM-dd');
-        const note = (tx.note || '').replace(/"/g, '""');
-        return `${date},${tx.type},${tx.category},${tx.amount},"${note}"`;
-      })
-      .join('\n');
-    const csv = header + rows;
-
-    // Keep sending=true until done so button stays disabled
     setEmailSending(true);
     setEmailModalVisible(false);
-
-    // Wait for modal dismiss animation to finish — iOS cannot present
-    // the mail composer while another view controller is transitioning
     await new Promise(resolve => setTimeout(resolve, 700));
-
     try {
+      const fmt = (n: number) =>
+        new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+
+      const totalIncome = transactions
+        .filter(tx => tx.type === 'income')
+        .reduce((s, tx) => s + tx.amount, 0);
+      const totalExpense = transactions
+        .filter(tx => tx.type === 'expense')
+        .reduce((s, tx) => s + tx.amount, 0);
+
+      // Group transactions by month
+      const byMonth: Record<string, typeof transactions> = {};
+      transactions.forEach(tx => {
+        const key = tx.date.slice(0, 7);
+        if (!byMonth[key]) byMonth[key] = [];
+        byMonth[key].push(tx);
+      });
+      const months = Object.keys(byMonth).sort().reverse();
+
+      const monthSections = months.map(m => {
+        const label = format(new Date(m + '-01'), 'MMMM yyyy');
+        const rows = byMonth[m]
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+          .map(tx => {
+            const isExpense = tx.type === 'expense';
+            const amtColor = isExpense ? '#D63031' : '#00B894';
+            const sign = isExpense ? '−' : '+';
+            return `
+              <tr>
+                <td>${format(new Date(tx.date), 'MMM d')}</td>
+                <td>${tx.category}</td>
+                <td>${tx.note || '—'}</td>
+                <td style="color:${amtColor};font-weight:600;text-align:right">${sign}${fmt(tx.amount)}</td>
+              </tr>`;
+          }).join('');
+        const mIncome = byMonth[m].filter(tx => tx.type === 'income').reduce((s, tx) => s + tx.amount, 0);
+        const mExpense = byMonth[m].filter(tx => tx.type === 'expense').reduce((s, tx) => s + tx.amount, 0);
+        return `
+          <div class="month-header">${label}</div>
+          <table>
+            <thead><tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right">Amount</th></tr></thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3" style="text-align:right;font-weight:700;color:#636E72">Month Total</td>
+                <td style="text-align:right;font-weight:700;color:${mExpense > mIncome ? '#D63031' : '#00B894'}">
+                  ${fmt(mIncome - mExpense)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>`;
+      }).join('');
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8"/>
+          <style>
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: -apple-system, Helvetica, Arial, sans-serif; color: #1F2937; padding: 32px; }
+            .logo { font-size: 28px; font-weight: 800; color: #5B6CFF; margin-bottom: 4px; }
+            .subtitle { font-size: 13px; color: #6B7280; margin-bottom: 24px; }
+            .summary { display: flex; gap: 16px; margin-bottom: 32px; }
+            .summary-card { flex: 1; border-radius: 12px; padding: 16px; }
+            .summary-card.income { background: #E8F8F3; }
+            .summary-card.expense { background: #FFEAEA; }
+            .summary-card.balance { background: #EEF1FA; }
+            .summary-label { font-size: 11px; color: #6B7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+            .summary-value { font-size: 20px; font-weight: 800; }
+            .summary-card.income .summary-value { color: #00B894; }
+            .summary-card.expense .summary-value { color: #D63031; }
+            .summary-card.balance .summary-value { color: #5B6CFF; }
+            .month-header { font-size: 15px; font-weight: 700; color: #5B6CFF; margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #EEF1FA; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 13px; }
+            th { text-align: left; font-size: 11px; color: #94A3B8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 8px; background: #F8FAFC; }
+            td { padding: 8px; border-bottom: 1px solid #F1F5F9; vertical-align: top; }
+            tfoot td { border-top: 1px solid #DEE4F0; border-bottom: none; padding-top: 10px; }
+            .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #94A3B8; }
+          </style>
+        </head>
+        <body>
+          <div class="logo">Pockyt</div>
+          <div class="subtitle">Transaction Report · Generated ${format(new Date(), 'MMMM d, yyyy')}</div>
+          <div class="summary">
+            <div class="summary-card income">
+              <div class="summary-label">Total Income</div>
+              <div class="summary-value">${fmt(totalIncome)}</div>
+            </div>
+            <div class="summary-card expense">
+              <div class="summary-label">Total Expenses</div>
+              <div class="summary-value">${fmt(totalExpense)}</div>
+            </div>
+            <div class="summary-card balance">
+              <div class="summary-label">Net Balance</div>
+              <div class="summary-value">${fmt(totalIncome - totalExpense)}</div>
+            </div>
+          </div>
+          ${monthSections}
+          <div class="footer">Pockyt · ${transactions.length} transactions · Exported ${format(new Date(), 'yyyy-MM-dd')}</div>
+        </body>
+        </html>`;
+
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+
       const isAvailable = await MailComposer.isAvailableAsync();
       if (!isAvailable) {
-        const subject = encodeURIComponent('Pockyt Transactions Export');
-        const body = encodeURIComponent(csv);
-        await Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
+        await Linking.openURL(`mailto:${email}?subject=${encodeURIComponent('Pockyt Transaction Report')}`);
         return;
       }
-
-      // Try to attach the CSV as a file
-      try {
-        const fileName = `pockyt_export_${format(new Date(), 'yyyyMMdd')}.csv`;
-        const file = new File(Paths.document + fileName);
-        await file.write(csv);
-        await MailComposer.composeAsync({
-          recipients: [email],
-          subject: 'Pockyt Transactions Export',
-          body: 'Please find your Pockyt transaction history attached.',
-          attachments: [file.uri],
-        });
-      } catch {
-        // File attachment failed — compose with CSV in body instead
-        await MailComposer.composeAsync({
-          recipients: [email],
-          subject: 'Pockyt Transactions Export',
-          body: csv,
-        });
-      }
+      await MailComposer.composeAsync({
+        recipients: [email],
+        subject: 'Pockyt Transaction Report',
+        body: 'Please find your Pockyt transaction report attached as a PDF.',
+        attachments: [uri],
+      });
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Could not open the mail client.');
+      Alert.alert('Export Failed', e?.message ?? 'Could not generate PDF.');
     } finally {
       setEmailSending(false);
     }
@@ -317,9 +390,9 @@ export default function SettingsScreen() {
       <Text style={styles.sectionTitle}>{t('dataLabel')}</Text>
       <View style={styles.section}>
         <SettingRow
-          icon="download-outline"
-          label={t('exportCSV')}
-          onPress={handleExportCSV}
+          icon="document-text-outline"
+          label={t('exportPDF')}
+          onPress={handleExportPDF}
         />
         <SettingRow
           icon="trash-outline"
@@ -449,7 +522,7 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Email export modal */}
+      {/* PDF email modal */}
       <Modal visible={emailModalVisible} animationType="fade" transparent statusBarTranslucent>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -458,13 +531,13 @@ export default function SettingsScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setEmailModalVisible(false)} />
           <View style={styles.emailCard}>
             <View style={styles.emailIconWrap}>
-              <Ionicons name="mail-outline" size={28} color="#6C5CE7" />
+              <Ionicons name="document-text-outline" size={28} color="#6C5CE7" />
             </View>
-            <Text style={styles.emailTitle}>{t('sendToEmail')}</Text>
+            <Text style={styles.emailTitle}>{t('exportPDF')}</Text>
             <Text style={styles.emailSubtitle}>
               {language === 'zh'
-                ? '导出的 CSV 文件将以附件形式发送'
-                : 'Your CSV file will be sent as an attachment'}
+                ? '将生成 PDF 报告并通过邮件发送'
+                : 'A PDF report will be generated and sent to your email'}
             </Text>
             <TextInput
               style={styles.emailInput}
@@ -476,7 +549,7 @@ export default function SettingsScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="send"
-              onSubmitEditing={handleSendEmail}
+              onSubmitEditing={handleSendPDF}
               autoFocus
             />
             <View style={styles.emailBtnRow}>
@@ -486,7 +559,7 @@ export default function SettingsScreen() {
               >
                 <Text style={styles.emailCancelText}>{t('cancel')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.emailSendBtn} onPress={handleSendEmail} disabled={emailSending}>
+              <TouchableOpacity style={styles.emailSendBtn} onPress={handleSendPDF} disabled={emailSending}>
                 {emailSending
                   ? <ActivityIndicator color="#fff" size="small" />
                   : <>
