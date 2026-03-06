@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { Card } from '../types';
+import { Card, Transaction } from '../types';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -60,5 +60,81 @@ export async function cancelCardReminder(cardId: string): Promise<void> {
     await Notifications.cancelScheduledNotificationAsync(`card-reminder-${cardId}`);
   } catch {
     // Notification may not exist.
+  }
+}
+
+// --- Budget notifications ---
+
+// Tracks which category+threshold combos have already been notified this month.
+// Key format: "YYYY-MM:category:threshold" (threshold = '80' or '100')
+const notifiedBudgets = new Set<string>();
+
+export async function setupBudgetNotificationChannel(): Promise<void> {
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('budget-alerts', {
+      name: 'Budget Alerts',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'default',
+    });
+  }
+}
+
+export async function checkBudgetNotifications(
+  transactions: Transaction[],
+  budgets: Record<string, number>,
+  currency: string
+): Promise<void> {
+  const hasPermission = await requestNotificationPermissions();
+  if (!hasPermission) return;
+
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  // Sum expenses per category for current month
+  const categorySpend: Record<string, number> = {};
+  transactions
+    .filter(tx => tx.type === 'expense' && tx.date.startsWith(monthKey))
+    .forEach(tx => {
+      categorySpend[tx.category] = (categorySpend[tx.category] || 0) + tx.amount;
+    });
+
+  const fmt = (n: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+
+  for (const [category, limit] of Object.entries(budgets)) {
+    if (!limit || limit <= 0) continue;
+    const spent = categorySpend[category] || 0;
+    const pct = spent / limit;
+
+    const key100 = `${monthKey}:${category}:100`;
+    const key80 = `${monthKey}:${category}:80`;
+
+    if (pct >= 1 && !notifiedBudgets.has(key100)) {
+      notifiedBudgets.add(key100);
+      await Notifications.scheduleNotificationAsync({
+        identifier: `budget-exceeded-${category}-${monthKey}`,
+        content: {
+          title: 'Budget Exceeded',
+          body: `${category}: spent ${fmt(spent)} of ${fmt(limit)} budget`,
+          data: { category },
+          sound: 'default',
+          ...(Platform.OS === 'android' ? { android: { channelId: 'budget-alerts' } } : {}),
+        },
+        trigger: null,
+      });
+    } else if (pct >= 0.8 && pct < 1 && !notifiedBudgets.has(key80)) {
+      notifiedBudgets.add(key80);
+      await Notifications.scheduleNotificationAsync({
+        identifier: `budget-warning-${category}-${monthKey}`,
+        content: {
+          title: 'Budget Warning',
+          body: `${category}: ${Math.round(pct * 100)}% of ${fmt(limit)} budget used`,
+          data: { category },
+          sound: 'default',
+          ...(Platform.OS === 'android' ? { android: { channelId: 'budget-alerts' } } : {}),
+        },
+        trigger: null,
+      });
+    }
   }
 }

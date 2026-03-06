@@ -42,6 +42,8 @@ export interface Goal {
   targetAmount: number;
   savedAmount: number;
   deadline?: string; // ISO date string
+  color?: string;
+  icon?: string;
 }
 
 export interface AppState {

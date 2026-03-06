@@ -95,6 +95,7 @@ export default function TransactionsScreen() {
   const [filterMonth, setFilterMonth] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'expense' | 'income'>('all');
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency] = useState<RecurringFrequency>('monthly');
 
@@ -106,6 +107,9 @@ export default function TransactionsScreen() {
     if (filterCategory) {
       result = result.filter(tx => tx.category === filterCategory);
     }
+    if (filterType !== 'all') {
+      result = result.filter(tx => tx.type === filterType);
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       result = result.filter(
@@ -115,7 +119,7 @@ export default function TransactionsScreen() {
       );
     }
     return result;
-  }, [transactions, filterMonth, filterCategory, searchQuery]);
+  }, [transactions, filterMonth, filterCategory, filterType, searchQuery]);
 
   function resetForm() {
     setAmount('');
@@ -219,6 +223,31 @@ export default function TransactionsScreen() {
             <Ionicons name="close-circle" size={18} color="#B2BEC3" />
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* Type filter */}
+      <View style={styles.typeFilterRow}>
+        {(['all', 'expense', 'income'] as const).map(type => (
+          <TouchableOpacity
+            key={type}
+            style={[
+              styles.typeFilterChip,
+              filterType === type && (
+                type === 'expense' ? styles.typeFilterExpenseActive :
+                type === 'income' ? styles.typeFilterIncomeActive :
+                styles.typeFilterAllActive
+              ),
+            ]}
+            onPress={() => setFilterType(type)}
+          >
+            <Text style={[
+              styles.typeFilterText,
+              filterType === type && styles.typeFilterTextActive,
+            ]}>
+              {type === 'all' ? t('all') : type === 'expense' ? t('expense') : t('incomeType')}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Month filter */}
@@ -428,6 +457,26 @@ const styles = StyleSheet.create({
   },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 15, paddingVertical: 10, color: theme.colors.text },
+  typeFilterRow: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 10,
+    gap: 8,
+  },
+  typeFilterChip: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+  },
+  typeFilterAllActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  typeFilterExpenseActive: { backgroundColor: '#D63031', borderColor: '#D63031' },
+  typeFilterIncomeActive: { backgroundColor: '#00B894', borderColor: '#00B894' },
+  typeFilterText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
+  typeFilterTextActive: { color: '#fff' },
   filterBar: { maxHeight: 44 },
   filterContent: { paddingHorizontal: 16, gap: 8, paddingBottom: 4 },
   filterChip: {

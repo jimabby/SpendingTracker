@@ -17,6 +17,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { CATEGORY_COLORS } from '../constants/categories';
 import { theme } from '../constants/theme';
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, subMonths } from 'date-fns';
+import GoalsScreen from './GoalsScreen';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHART_WIDTH = SCREEN_WIDTH - 48;
@@ -35,8 +36,10 @@ export default function HomeScreen() {
   const { state } = useApp();
   const t = useTranslation();
   const { transactions, currency, budgets } = state;
+  const goals = state.goals || [];
   const [period, setPeriod] = useState<'month' | 'year'>('month');
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
+  const [goalsVisible, setGoalsVisible] = useState(false);
 
   const now = new Date();
 
@@ -170,6 +173,34 @@ export default function HomeScreen() {
           </Text>
         </View>
 
+        {/* Goals summary card */}
+        <TouchableOpacity style={styles.goalsCard} onPress={() => setGoalsVisible(true)} activeOpacity={0.85}>
+          <View style={styles.goalsCardLeft}>
+            <View style={styles.goalsIconWrap}>
+              <Ionicons name="trophy" size={20} color={theme.colors.primary} />
+            </View>
+            <View>
+              <Text style={styles.goalsCardTitle}>Savings Goals</Text>
+              <Text style={styles.goalsCardSub}>
+                {goals.length === 0
+                  ? 'Tap to set your first goal'
+                  : `${goals.filter(g => g.savedAmount >= g.targetAmount).length}/${goals.length} completed`}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.goalsCardRight}>
+            {goals.length > 0 && (
+              <Text style={styles.goalsCardPct}>
+                {Math.round(
+                  (goals.reduce((s, g) => s + g.savedAmount, 0) /
+                    Math.max(1, goals.reduce((s, g) => s + g.targetAmount, 0))) * 100
+                )}%
+              </Text>
+            )}
+            <Ionicons name="chevron-forward" size={16} color={theme.colors.textFaint} />
+          </View>
+        </TouchableOpacity>
+
         {pieData.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>{t('spendingByCategory')}</Text>
@@ -252,6 +283,8 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      <GoalsScreen visible={goalsVisible} onClose={() => setGoalsVisible(false)} />
 
       {/* Category drill-down modal */}
       <Modal
@@ -346,11 +379,34 @@ const styles = StyleSheet.create({
   expenseCard: { backgroundColor: '#FFEAEA' },
   cardLabel: { fontSize: 12, color: theme.colors.textMuted, marginBottom: 4 },
   cardAmount: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
-  balanceCard: {
+  goalsCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.lg,
     padding: 16,
     marginBottom: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    ...theme.shadow.card,
+  },
+  goalsCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  goalsIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: theme.colors.primary + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goalsCardTitle: { fontSize: 15, fontWeight: '700', color: theme.colors.text },
+  goalsCardSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  goalsCardRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  goalsCardPct: { fontSize: 16, fontWeight: '800', color: theme.colors.primary },
+  balanceCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: 16,
+    marginBottom: 12,
     alignItems: 'center',
     ...theme.shadow.card,
   },
