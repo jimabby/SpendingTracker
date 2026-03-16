@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import { AppState, AppAction, RecurringTransaction } from '../types';
 import { loadState, saveState, defaultState } from '../storage/storage';
 import { differenceInCalendarDays } from 'date-fns';
@@ -120,16 +120,18 @@ const AppContext = createContext<AppContextValue>({
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, defaultState);
+  const hydrated = useRef(false);
 
   useEffect(() => {
     loadState().then(loaded => {
       dispatch({ type: 'LOAD_STATE', payload: loaded });
+      hydrated.current = true;
       processRecurring(loaded.recurringTransactions, dispatch);
     });
   }, []);
 
   useEffect(() => {
-    saveState(state);
+    if (hydrated.current) saveState(state);
   }, [state]);
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;

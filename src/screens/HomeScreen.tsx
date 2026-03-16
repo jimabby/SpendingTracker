@@ -180,11 +180,11 @@ export default function HomeScreen() {
               <Ionicons name="trophy" size={20} color={theme.colors.primary} />
             </View>
             <View>
-              <Text style={styles.goalsCardTitle}>Savings Goals</Text>
+              <Text style={styles.goalsCardTitle}>{t('savingsGoals')}</Text>
               <Text style={styles.goalsCardSub}>
                 {goals.length === 0
-                  ? 'Tap to set your first goal'
-                  : `${goals.filter(g => g.savedAmount >= g.targetAmount).length}/${goals.length} completed`}
+                  ? t('tapToSetFirstGoal')
+                  : t('goalsCompleted')(goals.filter(g => g.savedAmount >= g.targetAmount).length, goals.length)}
               </Text>
             </View>
           </View>

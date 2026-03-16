@@ -118,7 +118,7 @@ export default function TransactionsScreen() {
           tx.category.toLowerCase().includes(q)
       );
     }
-    return result;
+    return result.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions, filterMonth, filterCategory, filterType, searchQuery]);
 
   function resetForm() {
@@ -227,24 +227,24 @@ export default function TransactionsScreen() {
 
       {/* Type filter */}
       <View style={styles.typeFilterRow}>
-        {(['all', 'expense', 'income'] as const).map(type => (
+        {(['all', 'expense', 'income'] as const).map(ft => (
           <TouchableOpacity
-            key={type}
+            key={ft}
             style={[
               styles.typeFilterChip,
-              filterType === type && (
-                type === 'expense' ? styles.typeFilterExpenseActive :
-                type === 'income' ? styles.typeFilterIncomeActive :
+              filterType === ft && (
+                ft === 'expense' ? styles.typeFilterExpenseActive :
+                ft === 'income' ? styles.typeFilterIncomeActive :
                 styles.typeFilterAllActive
               ),
             ]}
-            onPress={() => setFilterType(type)}
+            onPress={() => setFilterType(ft)}
           >
             <Text style={[
               styles.typeFilterText,
-              filterType === type && styles.typeFilterTextActive,
+              filterType === ft && styles.typeFilterTextActive,
             ]}>
-              {type === 'all' ? t('all') : type === 'expense' ? t('expense') : t('incomeType')}
+              {ft === 'all' ? t('all') : ft === 'expense' ? t('expense') : t('incomeType')}
             </Text>
           </TouchableOpacity>
         ))}

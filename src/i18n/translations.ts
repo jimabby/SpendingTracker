@@ -221,6 +221,16 @@ export const translations = {
     goalDueToday: 'Due today',
     tapToSetFirstGoal: 'Tap to set your first goal',
     goalsCompleted: (done: number, total: number) => `${done}/${total} completed`,
+    goalSummSaved: 'Saved',
+    goalSummTarget: 'Target',
+    goalSummCompleted: 'Completed',
+    titleRequired: 'Title required',
+    pleaseEnterGoalName: 'Please enter a goal name.',
+    pleaseEnterValidTarget: 'Please enter a valid target amount.',
+    pleaseEnterValidAmount: 'Please enter a valid amount.',
+    removeGoal: 'Remove this goal?',
+    addTo: (name: string) => `Add to "${name}"`,
+    amountToAdd: 'Amount to add',
   },
 
   zh: {
@@ -445,6 +455,16 @@ export const translations = {
     goalDueToday: '今天到期',
     tapToSetFirstGoal: '点击设定第一个目标',
     goalsCompleted: (done: number, total: number) => `${done}/${total} 已完成`,
+    goalSummSaved: '已存',
+    goalSummTarget: '目标',
+    goalSummCompleted: '已完成',
+    titleRequired: '请输入标题',
+    pleaseEnterGoalName: '请输入目标名称。',
+    pleaseEnterValidTarget: '请输入有效的目标金额。',
+    pleaseEnterValidAmount: '请输入有效金额。',
+    removeGoal: '删除此目标？',
+    addTo: (name: string) => `添加到"${name}"`,
+    amountToAdd: '添加金额',
   },
 } as const;
 

@@ -10,7 +10,6 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
@@ -38,12 +37,14 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
 function GoalCard({
   goal,
   currency,
+  t,
   onEdit,
   onDelete,
   onAddSavings,
 }: {
   goal: Goal;
   currency: string;
+  t: (key: any) => any;
   onEdit: (g: Goal) => void;
   onDelete: (id: string) => void;
   onAddSavings: (g: Goal) => void;
@@ -60,10 +61,10 @@ function GoalCard({
   if (goal.deadline) {
     const days = differenceInCalendarDays(new Date(goal.deadline), new Date());
     if (days < 0) {
-      deadlineText = 'Overdue';
+      deadlineText = t('goalOverdue');
       deadlineUrgent = true;
     } else if (days === 0) {
-      deadlineText = 'Due today';
+      deadlineText = t('goalDueToday');
       deadlineUrgent = true;
     } else if (days <= 30) {
       deadlineText = `${days}d left`;
@@ -93,7 +94,7 @@ function GoalCard({
           {completed && (
             <View style={styles.completedBadge}>
               <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />
-              <Text style={styles.completedText}>Done</Text>
+              <Text style={styles.completedText}>{t('goalCompleted')}</Text>
             </View>
           )}
           <TouchableOpacity onPress={() => onEdit(goal)} style={styles.iconBtn}>
@@ -115,7 +116,7 @@ function GoalCard({
         {!completed && (
           <TouchableOpacity style={[styles.addSavingsBtn, { borderColor: color }]} onPress={() => onAddSavings(goal)}>
             <Ionicons name="add-circle-outline" size={14} color={color} />
-            <Text style={[styles.addSavingsBtnText, { color }]}>Add Savings</Text>
+            <Text style={[styles.addSavingsBtnText, { color }]}>{t('addSavings')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -172,11 +173,11 @@ export default function GoalsScreen({ visible, onClose }: Props) {
   function handleSave() {
     const target = parseFloat(targetAmount);
     if (!title.trim()) {
-      Alert.alert('Title required', 'Please enter a goal name.');
+      Alert.alert(t('titleRequired'), t('pleaseEnterGoalName'));
       return;
     }
     if (!target || target <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid target amount.');
+      Alert.alert(t('invalidAmount'), t('pleaseEnterValidTarget'));
       return;
     }
     const saved = parseFloat(savedAmount) || 0;
@@ -200,7 +201,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
   }
 
   function handleDelete(id: string) {
-    Alert.alert(t('delete'), 'Remove this goal?', [
+    Alert.alert(t('delete'), t('removeGoal'), [
       { text: t('cancel'), style: 'cancel' },
       { text: t('delete'), style: 'destructive', onPress: () => dispatch({ type: 'DELETE_GOAL', payload: id }) },
     ]);
@@ -210,7 +211,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
     if (!savingsGoal) return;
     const add = parseFloat(savingsAmount);
     if (!add || add <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid amount.');
+      Alert.alert(t('invalidAmount'), t('pleaseEnterValidAmount'));
       return;
     }
     const updated: Goal = {
@@ -235,7 +236,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
         <View style={styles.sheet}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>Goals</Text>
+            <Text style={styles.headerTitle}>{t('goals')}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
               <Ionicons name="close" size={22} color={theme.colors.textMuted} />
             </TouchableOpacity>
@@ -246,17 +247,17 @@ export default function GoalsScreen({ visible, onClose }: Props) {
             <View style={styles.summaryRow}>
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryValue}>{fmt(totalSaved)}</Text>
-                <Text style={styles.summaryLabel}>Saved</Text>
+                <Text style={styles.summaryLabel}>{t('goalSummSaved')}</Text>
               </View>
               <View style={styles.summaryDivider} />
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryValue}>{fmt(totalTarget)}</Text>
-                <Text style={styles.summaryLabel}>Target</Text>
+                <Text style={styles.summaryLabel}>{t('goalSummTarget')}</Text>
               </View>
               <View style={styles.summaryDivider} />
               <View style={styles.summaryItem}>
                 <Text style={[styles.summaryValue, { color: theme.colors.success }]}>{completedCount}</Text>
-                <Text style={styles.summaryLabel}>Completed</Text>
+                <Text style={styles.summaryLabel}>{t('goalSummCompleted')}</Text>
               </View>
             </View>
           )}
@@ -265,8 +266,8 @@ export default function GoalsScreen({ visible, onClose }: Props) {
             {goals.length === 0 ? (
               <View style={styles.empty}>
                 <Ionicons name="trophy-outline" size={52} color={theme.colors.textFaint} />
-                <Text style={styles.emptyTitle}>No goals yet</Text>
-                <Text style={styles.emptyHint}>Set a savings goal and track your progress</Text>
+                <Text style={styles.emptyTitle}>{t('noGoalsYet')}</Text>
+                <Text style={styles.emptyHint}>{t('noGoalsHint')}</Text>
               </View>
             ) : (
               goals.map(g => (
@@ -274,6 +275,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
                   key={g.id}
                   goal={g}
                   currency={currency}
+                  t={t}
                   onEdit={openEdit}
                   onDelete={handleDelete}
                   onAddSavings={(goal) => { setSavingsGoal(goal); setSavingsAmount(''); }}
@@ -284,7 +286,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
 
           <TouchableOpacity style={styles.addBtn} onPress={() => { resetForm(); setFormVisible(true); }}>
             <Ionicons name="add" size={20} color="#fff" />
-            <Text style={styles.addBtnText}>New Goal</Text>
+            <Text style={styles.addBtnText}>{t('newGoal')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -294,7 +296,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.overlay}>
           <View style={styles.formSheet}>
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>{editingGoal ? 'Edit Goal' : 'New Goal'}</Text>
+              <Text style={styles.headerTitle}>{editingGoal ? t('editGoal') : t('newGoal')}</Text>
               <TouchableOpacity onPress={resetForm}>
                 <Ionicons name="close" size={22} color={theme.colors.textMuted} />
               </TouchableOpacity>
@@ -302,14 +304,14 @@ export default function GoalsScreen({ visible, onClose }: Props) {
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <TextInput
                 style={styles.input}
-                placeholder="Goal name (e.g. Emergency Fund)"
+                placeholder={t('goalNamePlaceholder')}
                 value={title}
                 onChangeText={setTitle}
                 placeholderTextColor={theme.colors.textFaint}
               />
               <TextInput
                 style={styles.input}
-                placeholder="Target amount"
+                placeholder={t('goalTargetPlaceholder')}
                 keyboardType="decimal-pad"
                 value={targetAmount}
                 onChangeText={setTargetAmount}
@@ -317,7 +319,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
               />
               <TextInput
                 style={styles.input}
-                placeholder="Already saved (optional)"
+                placeholder={t('goalSavedPlaceholder')}
                 keyboardType="decimal-pad"
                 value={savedAmount}
                 onChangeText={setSavedAmount}
@@ -325,13 +327,13 @@ export default function GoalsScreen({ visible, onClose }: Props) {
               />
               <TextInput
                 style={styles.input}
-                placeholder="Deadline (YYYY-MM-DD, optional)"
+                placeholder={t('goalDeadlinePlaceholder')}
                 value={deadline}
                 onChangeText={setDeadline}
                 placeholderTextColor={theme.colors.textFaint}
               />
 
-              <Text style={styles.sectionLabel}>Color</Text>
+              <Text style={styles.sectionLabel}>{t('goalColor')}</Text>
               <View style={styles.colorRow}>
                 {GOAL_COLORS.map(c => (
                   <TouchableOpacity
@@ -342,7 +344,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
                 ))}
               </View>
 
-              <Text style={styles.sectionLabel}>Icon</Text>
+              <Text style={styles.sectionLabel}>{t('goalIcon')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
                 {GOAL_ICONS.map(icon => (
                   <TouchableOpacity
@@ -360,7 +362,7 @@ export default function GoalsScreen({ visible, onClose }: Props) {
               </ScrollView>
 
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-                <Text style={styles.saveBtnText}>{editingGoal ? 'Update Goal' : 'Create Goal'}</Text>
+                <Text style={styles.saveBtnText}>{editingGoal ? t('updateGoal') : t('createGoal')}</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -372,10 +374,10 @@ export default function GoalsScreen({ visible, onClose }: Props) {
         <Modal visible={!!savingsGoal} animationType="fade" transparent onRequestClose={() => setSavingsGoal(null)}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.savingsOverlay}>
             <View style={styles.savingsSheet}>
-              <Text style={styles.savingsTitle}>Add to "{savingsGoal.title}"</Text>
+              <Text style={styles.savingsTitle}>{t('addTo')(savingsGoal.title)}</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Amount to add"
+                placeholder={t('amountToAdd')}
                 keyboardType="decimal-pad"
                 value={savingsAmount}
                 onChangeText={setSavingsAmount}
@@ -384,10 +386,10 @@ export default function GoalsScreen({ visible, onClose }: Props) {
               />
               <View style={styles.savingsButtons}>
                 <TouchableOpacity style={styles.savingsCancelBtn} onPress={() => setSavingsGoal(null)}>
-                  <Text style={styles.savingsCancelText}>Cancel</Text>
+                  <Text style={styles.savingsCancelText}>{t('cancel')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.savingsConfirmBtn} onPress={handleAddSavings}>
-                  <Text style={styles.savingsConfirmText}>Add</Text>
+                  <Text style={styles.savingsConfirmText}>{t('addSavings')}</Text>
                 </TouchableOpacity>
               </View>
             </View>

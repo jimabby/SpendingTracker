@@ -152,7 +152,7 @@ function CardItem({
         </View>
         {spent > 0 && (
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.cardDueLabel}>{t('cardSpent')}</Text>
+            <Text style={styles.cardDueLabel}>{t('cardSpent')} ({t('thisMonth')})</Text>
             <Text style={styles.cardDueText}>{fmt(spent)}</Text>
           </View>
         )}
@@ -218,9 +218,11 @@ export default function CardsScreen() {
   }, []);
 
   const cardSpending = useMemo(() => {
+    const now = new Date();
+    const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const map: Record<string, number> = {};
     transactions
-      .filter(tx => tx.type === 'expense' && tx.cardId)
+      .filter(tx => tx.type === 'expense' && tx.cardId && tx.date.startsWith(monthPrefix))
       .forEach(tx => { map[tx.cardId!] = (map[tx.cardId!] || 0) + tx.amount; });
     return map;
   }, [transactions]);
