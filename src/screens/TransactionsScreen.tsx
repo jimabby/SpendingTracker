@@ -106,6 +106,7 @@ export default function TransactionsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'expense' | 'income'>('all');
+  const [txDate, setTxDate] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency, setFrequency] = useState<RecurringFrequency>('monthly');
 
@@ -137,6 +138,7 @@ export default function TransactionsScreen() {
     setCategory('');
     setNote('');
     setCardId('');
+    setTxDate('');
     setType('expense');
     setEditingTx(null);
     setIsRecurring(false);
@@ -151,6 +153,7 @@ export default function TransactionsScreen() {
     setCategory(tx.category);
     setNote(tx.note);
     setCardId(tx.cardId || '');
+    setTxDate(tx.date.slice(0, 10));
     setModalVisible(true);
   }
 
@@ -164,10 +167,14 @@ export default function TransactionsScreen() {
       Alert.alert(t('selectCategory'), t('pleaseSelectCategory'));
       return;
     }
+    const dateValue = txDate && /^\d{4}-\d{2}-\d{2}$/.test(txDate)
+      ? new Date(txDate + 'T12:00:00').toISOString()
+      : new Date().toISOString();
+
     if (editingTx) {
       dispatch({
         type: 'UPDATE_TRANSACTION',
-        payload: { ...editingTx, amount: parsed, type, category, note, cardId: cardId || undefined },
+        payload: { ...editingTx, amount: parsed, type, category, note, date: dateValue, cardId: cardId || undefined },
       });
     } else {
       const tx: Transaction = {
@@ -176,7 +183,7 @@ export default function TransactionsScreen() {
         type,
         category,
         note,
-        date: new Date().toISOString(),
+        date: dateValue,
         cardId: cardId || undefined,
       };
       dispatch({ type: 'ADD_TRANSACTION', payload: tx });
@@ -362,6 +369,26 @@ export default function TransactionsScreen() {
                 value={note}
                 onChangeText={setNote}
               />
+
+              <Text style={styles.inputLabel}>{t('transactionDate')}</Text>
+              <View style={styles.dateRow}>
+                <TouchableOpacity
+                  style={[styles.dateChip, !txDate && styles.dateChipActive]}
+                  onPress={() => setTxDate('')}
+                >
+                  <Text style={[styles.dateChipText, !txDate && styles.dateChipTextActive]}>{t('today')}</Text>
+                </TouchableOpacity>
+                <TextInput
+                  style={[styles.input, styles.dateInput]}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={theme.colors.textFaint}
+                  value={txDate}
+                  onChangeText={setTxDate}
+                  maxLength={10}
+                  autoCapitalize="none"
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
 
               <Text style={styles.inputLabel}>{t('category')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
@@ -571,6 +598,17 @@ function createStyles(theme: AppTheme) {
       color: theme.colors.text,
     },
     inputLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted, marginBottom: 8 },
+    dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+    dateChip: {
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 12,
+      backgroundColor: theme.colors.surfaceMuted,
+    },
+    dateChipActive: { backgroundColor: theme.colors.primary },
+    dateChipText: { fontSize: 14, fontWeight: '600', color: theme.colors.textMuted },
+    dateChipTextActive: { color: '#fff' },
+    dateInput: { flex: 1, marginBottom: 0 },
     catScroll: { marginBottom: 16 },
     catChip: {
       paddingHorizontal: 14,

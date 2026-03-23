@@ -293,7 +293,7 @@ export default function CardsScreen() {
     if (editingCard) {
       const updated = buildCard(editingCard.id, editingCard.reminderEnabled);
       dispatch({ type: 'UPDATE_CARD', payload: updated });
-      if (editingCard.reminderEnabled) scheduleCardReminder(updated);
+      if (editingCard.reminderEnabled) scheduleCardReminder(updated, language);
     } else {
       dispatch({ type: 'ADD_CARD', payload: buildCard(generateId()) });
     }
@@ -305,7 +305,7 @@ export default function CardsScreen() {
     if (willEnable) {
       const granted = await requestNotificationPermissions();
       if (!granted) { Alert.alert(t('billReminders'), t('notifPermissionDenied')); return; }
-      await scheduleCardReminder(card);
+      await scheduleCardReminder(card, language);
     } else {
       await cancelCardReminder(card.id);
     }

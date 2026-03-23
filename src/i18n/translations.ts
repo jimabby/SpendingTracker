@@ -250,6 +250,33 @@ export const translations = {
     deleteRecurring: 'Delete Recurring',
     removeRecurringPrompt: 'Stop this recurring transaction?',
     recurringCount: (n: number) => `${n} active`,
+
+    // Notification strings
+    notifPaymentDueTitle: 'Payment Due Tomorrow',
+    notifPaymentDueBody: (name: string, lastFour: string) => `${name} (**** ${lastFour}) payment is due tomorrow`,
+    notifBudgetExceeded: 'Budget Exceeded',
+    notifBudgetExceededBody: (cat: string, spent: string, limit: string) => `${cat}: spent ${spent} of ${limit} budget`,
+    notifBudgetWarning: 'Budget Warning',
+    notifBudgetWarningBody: (cat: string, pct: number, limit: string) => `${cat}: ${pct}% of ${limit} budget used`,
+
+    // PDF export
+    pdfTotalIncome: 'Total Income',
+    pdfTotalExpenses: 'Total Expenses',
+    pdfNetBalance: 'Net Balance',
+    pdfDate: 'Date',
+    pdfCategory: 'Category',
+    pdfNote: 'Note',
+    pdfAmount: 'Amount',
+    pdfMonthTotal: 'Month Total',
+    pdfReportSubtitle: 'Transaction Report',
+    pdfEmailSubject: 'Pockyt Transaction Report',
+    pdfEmailBody: 'Please find your Pockyt transaction report attached as a PDF.',
+    csvEmailSubject: 'Pockyt Transactions Export',
+    backupTitle: 'Pockyt Backup',
+
+    // Transaction date
+    transactionDate: 'Date',
+    today: 'Today',
   },
 
   zh: {
@@ -503,6 +530,33 @@ export const translations = {
     deleteRecurring: '删除定期交易',
     removeRecurringPrompt: '停止此定期交易？',
     recurringCount: (n: number) => `${n} 个进行中`,
+
+    // Notification strings
+    notifPaymentDueTitle: '明天到期还款',
+    notifPaymentDueBody: (name: string, lastFour: string) => `${name} (**** ${lastFour}) 明天到期还款`,
+    notifBudgetExceeded: '预算已超支',
+    notifBudgetExceededBody: (cat: string, spent: string, limit: string) => `${cat}：已花 ${spent}，预算 ${limit}`,
+    notifBudgetWarning: '预算预警',
+    notifBudgetWarningBody: (cat: string, pct: number, limit: string) => `${cat}：已使用 ${pct}% 的 ${limit} 预算`,
+
+    // PDF export
+    pdfTotalIncome: '总收入',
+    pdfTotalExpenses: '总支出',
+    pdfNetBalance: '净余额',
+    pdfDate: '日期',
+    pdfCategory: '分类',
+    pdfNote: '备注',
+    pdfAmount: '金额',
+    pdfMonthTotal: '月度合计',
+    pdfReportSubtitle: '交易报告',
+    pdfEmailSubject: 'Pockyt 交易报告',
+    pdfEmailBody: '请查收附件中的 Pockyt 交易报告 PDF。',
+    csvEmailSubject: 'Pockyt 交易数据导出',
+    backupTitle: 'Pockyt 数据备份',
+
+    // Transaction date
+    transactionDate: '日期',
+    today: '今天',
   },
 } as const;
 

@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Card, Transaction } from '../types';
+import { translations } from '../i18n/translations';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -30,9 +31,10 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   return status === 'granted';
 }
 
-export async function scheduleCardReminder(card: Card): Promise<void> {
+export async function scheduleCardReminder(card: Card, language?: string): Promise<void> {
   await cancelCardReminder(card.id);
 
+  const t = translations[language === 'zh' ? 'zh' : 'en'];
   const parsedDay = Number((card.dueDate || '').split('-').pop());
   const day = Number.isFinite(parsedDay) && parsedDay >= 1 && parsedDay <= 31 ? parsedDay : 1;
   // Remind the day before; if due on the 1st, remind on the 28th (safe for all months).
@@ -41,8 +43,8 @@ export async function scheduleCardReminder(card: Card): Promise<void> {
   await Notifications.scheduleNotificationAsync({
     identifier: `card-reminder-${card.id}`,
     content: {
-      title: 'Payment Due Tomorrow',
-      body: `${card.name} (**** ${card.lastFour}) payment is due tomorrow`,
+      title: t.notifPaymentDueTitle,
+      body: t.notifPaymentDueBody(card.name, card.lastFour),
       data: { cardId: card.id },
       sound: 'default',
     },
@@ -123,6 +125,7 @@ export async function checkBudgetNotifications(
       categorySpend[tx.category] = (categorySpend[tx.category] || 0) + tx.amount;
     });
 
+  const t = translations[language === 'zh' ? 'zh' : 'en'];
   const locale = language === 'zh' ? 'zh-CN' : 'en-US';
   const fmt = (n: number) =>
     new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n);
@@ -141,8 +144,8 @@ export async function checkBudgetNotifications(
       await Notifications.scheduleNotificationAsync({
         identifier: `budget-exceeded-${category}-${monthKey}`,
         content: {
-          title: 'Budget Exceeded',
-          body: `${category}: spent ${fmt(spent)} of ${fmt(limit)} budget`,
+          title: t.notifBudgetExceeded,
+          body: t.notifBudgetExceededBody(category, fmt(spent), fmt(limit)),
           data: { category },
           sound: 'default',
           ...(Platform.OS === 'android' ? { android: { channelId: 'budget-alerts' } } : {}),
@@ -155,8 +158,8 @@ export async function checkBudgetNotifications(
       await Notifications.scheduleNotificationAsync({
         identifier: `budget-warning-${category}-${monthKey}`,
         content: {
-          title: 'Budget Warning',
-          body: `${category}: ${Math.round(pct * 100)}% of ${fmt(limit)} budget used`,
+          title: t.notifBudgetWarning,
+          body: t.notifBudgetWarningBody(category, Math.round(pct * 100), fmt(limit)),
           data: { category },
           sound: 'default',
           ...(Platform.OS === 'android' ? { android: { channelId: 'budget-alerts' } } : {}),

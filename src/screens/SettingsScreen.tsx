@@ -171,11 +171,11 @@ export default function SettingsScreen() {
         return `
           <div class="month-header">${label}</div>
           <table>
-            <thead><tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right">Amount</th></tr></thead>
+            <thead><tr><th>${t('pdfDate')}</th><th>${t('pdfCategory')}</th><th>${t('pdfNote')}</th><th style="text-align:right">${t('pdfAmount')}</th></tr></thead>
             <tbody>${rows}</tbody>
             <tfoot>
               <tr>
-                <td colspan="3" style="text-align:right;font-weight:700;color:#636E72">Month Total</td>
+                <td colspan="3" style="text-align:right;font-weight:700;color:#636E72">${t('pdfMonthTotal')}</td>
                 <td style="text-align:right;font-weight:700;color:${mExpense > mIncome ? '#D63031' : '#00B894'}">
                   ${fmt(mIncome - mExpense)}
                 </td>
@@ -214,18 +214,18 @@ export default function SettingsScreen() {
         </head>
         <body>
           <div class="logo">Pockyt</div>
-          <div class="subtitle">Transaction Report \u00b7 Generated ${format(new Date(), 'MMMM d, yyyy')}</div>
+          <div class="subtitle">${t('pdfReportSubtitle')} \u00b7 ${format(new Date(), 'MMMM d, yyyy')}</div>
           <div class="summary">
             <div class="summary-card income">
-              <div class="summary-label">Total Income</div>
+              <div class="summary-label">${t('pdfTotalIncome')}</div>
               <div class="summary-value">${fmt(totalIncome)}</div>
             </div>
             <div class="summary-card expense">
-              <div class="summary-label">Total Expenses</div>
+              <div class="summary-label">${t('pdfTotalExpenses')}</div>
               <div class="summary-value">${fmt(totalExpense)}</div>
             </div>
             <div class="summary-card balance">
-              <div class="summary-label">Net Balance</div>
+              <div class="summary-label">${t('pdfNetBalance')}</div>
               <div class="summary-value">${fmt(totalIncome - totalExpense)}</div>
             </div>
           </div>
@@ -238,13 +238,13 @@ export default function SettingsScreen() {
 
       const isAvailable = await MailComposer.isAvailableAsync();
       if (!isAvailable) {
-        await Linking.openURL(`mailto:${email}?subject=${encodeURIComponent('Pockyt Transaction Report')}`);
+        await Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(t('pdfEmailSubject'))}`);
         return;
       }
       await MailComposer.composeAsync({
         recipients: [email],
-        subject: 'Pockyt Transaction Report',
-        body: 'Please find your Pockyt transaction report attached as a PDF.',
+        subject: t('pdfEmailSubject'),
+        body: t('pdfEmailBody'),
         attachments: [uri],
       });
     } catch (e: any) {
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
       const json = await exportState();
       await Share.share({
         message: json,
-        title: 'Pockyt Backup',
+        title: t('backupTitle'),
       });
     } catch (e: any) {
       Alert.alert('Backup Failed', e?.message || '');

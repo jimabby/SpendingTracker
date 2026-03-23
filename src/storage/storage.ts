@@ -25,7 +25,7 @@ export async function loadState(): Promise<AppState> {
       return { ...defaultState, ...JSON.parse(json) };
     }
   } catch (e) {
-    console.error('Failed to load state', e);
+    if (__DEV__) console.error('Failed to load state', e);
   }
   return defaultState;
 }
@@ -34,7 +34,7 @@ export async function saveState(state: AppState): Promise<void> {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
-    console.error('Failed to save state', e);
+    if (__DEV__) console.error('Failed to save state', e);
   }
 }
 
@@ -42,7 +42,7 @@ export async function clearState(): Promise<void> {
   try {
     await AsyncStorage.removeItem(STORAGE_KEY);
   } catch (e) {
-    console.error('Failed to clear state', e);
+    if (__DEV__) console.error('Failed to clear state', e);
   }
 }
 

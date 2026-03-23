@@ -530,9 +530,10 @@ export default function AIScreen({ visible, onClose }: Props) {
     }).join('\n');
     const csv = header + rows;
 
+    const csvSubject = t('csvEmailSubject');
     const isAvailable = await MailComposer.isAvailableAsync();
     if (!isAvailable) {
-      const subject = encodeURIComponent('Pockyt Transactions Export');
+      const subject = encodeURIComponent(csvSubject);
       const body = encodeURIComponent(csv);
       await Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
       return;
@@ -544,14 +545,14 @@ export default function AIScreen({ visible, onClose }: Props) {
       await file.write(csv);
       await MailComposer.composeAsync({
         recipients: [email],
-        subject: 'Pockyt Transactions Export',
-        body: 'Please find your Pockyt transaction history attached.',
+        subject: csvSubject,
+        body: t('pdfEmailBody'),
         attachments: [file.uri],
       });
     } catch {
       await MailComposer.composeAsync({
         recipients: [email],
-        subject: 'Pockyt Transactions Export',
+        subject: csvSubject,
         body: csv,
       });
     }
