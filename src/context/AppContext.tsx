@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect, useRef } from 
 import { AppState, AppAction, RecurringTransaction } from '../types';
 import { loadState, saveState, defaultState } from '../storage/storage';
 import { differenceInCalendarDays } from 'date-fns';
+import { AppState as RNAppState } from 'react-native';
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -46,6 +47,8 @@ function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'LOAD_STATE':
       return action.payload;
+    case 'IMPORT_STATE':
+      return { ...defaultState, ...action.payload };
     case 'ADD_TRANSACTION':
       return { ...state, transactions: [action.payload, ...state.transactions] };
     case 'DELETE_TRANSACTION':
@@ -103,6 +106,8 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { ...state, goals: (state.goals || []).filter(g => g.id !== action.payload) };
     case 'UPDATE_GOAL':
       return { ...state, goals: (state.goals || []).map(g => g.id === action.payload.id ? action.payload : g) };
+    case 'TOGGLE_DARK_MODE':
+      return { ...state, darkMode: !state.darkMode };
     default:
       return state;
   }
@@ -129,6 +134,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       processRecurring(loaded.recurringTransactions, dispatch);
     });
   }, []);
+
+  // Re-check recurring transactions when app returns to foreground
+  useEffect(() => {
+    const sub = RNAppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && hydrated.current) {
+        processRecurring(state.recurringTransactions, dispatch);
+      }
+    });
+    return () => sub.remove();
+  }, [state.recurringTransactions]);
 
   useEffect(() => {
     if (hydrated.current) saveState(state);

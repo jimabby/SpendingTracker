@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,11 +18,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { File, Paths } from 'expo-file-system/next';
 import * as MailComposer from 'expo-mail-composer';
 import { useApp } from '../context/AppContext';
+import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { sendAIMessageWithTools, ChatMessage, AIProvider } from '../utils/ai';
 import { TOOL_DEFINITIONS, executeToolCall } from '../utils/aiTools';
 import { translations } from '../i18n/translations';
-import { theme } from '../constants/theme';
+import { AppTheme } from '../constants/theme';
 import {
   format,
   startOfMonth,
@@ -88,7 +89,6 @@ function detectAnomalies(
   avgs: Record<string, number>,
   currency: string
 ): string[] {
-  // Look at last 30 days for individual transactions well above category avg
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const anomalies: string[] = [];
   transactions
@@ -113,7 +113,6 @@ function computeHealthScore(
   let score = 0;
   const parts: string[] = [];
 
-  // Savings rate (0-40 pts)
   if (totalIncome > 0) {
     const savingsRate = Math.max(0, (totalIncome - totalExpense) / totalIncome);
     const savingsPts = Math.min(40, Math.round(savingsRate * 100));
@@ -123,7 +122,6 @@ function computeHealthScore(
     parts.push('Savings 0/40 (no income recorded)');
   }
 
-  // Budget adherence (0-30 pts)
   const budgetCats = Object.keys(budgets);
   if (budgetCats.length > 0) {
     const within = budgetCats.filter(c => (categorySpend[c] || 0) <= budgets[c]).length;
@@ -131,17 +129,15 @@ function computeHealthScore(
     score += budgetPts;
     parts.push(`Budget ${budgetPts}/30`);
   } else {
-    score += 15; // neutral if no budgets set
+    score += 15;
     parts.push('Budget 15/30 (no budgets set)');
   }
 
-  // Expense variety / balanced spending (0-20 pts)
   const numCategories = Object.keys(categorySpend).length;
   const varietyPts = Math.min(20, numCategories * 3);
   score += varietyPts;
   parts.push(`Variety ${varietyPts}/20`);
 
-  // Expense vs income ratio bonus (0-10 pts)
   if (totalIncome > 0 && totalExpense < totalIncome * 0.7) {
     score += 10;
     parts.push('Low spending 10/10');
@@ -181,21 +177,18 @@ function buildContext(state: ReturnType<typeof useApp>['state']): string {
   const lastMonthStart = startOfMonth(subMonths(now, 1));
   const lastMonthEnd = endOfMonth(subMonths(now, 1));
 
-  // This month
   const thisMonth = transactions.filter(t =>
     isWithinInterval(new Date(t.date), { start: monthStart, end: monthEnd })
   );
   const totalIncome = thisMonth.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const totalExpense = thisMonth.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
 
-  // Last month
   const lastMonth = transactions.filter(t =>
     isWithinInterval(new Date(t.date), { start: lastMonthStart, end: lastMonthEnd })
   );
   const lastMonthExpense = lastMonth.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const lastMonthIncome = lastMonth.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
 
-  // Month-over-month change
   const expenseChange = lastMonthExpense > 0
     ? ((totalExpense - lastMonthExpense) / lastMonthExpense * 100).toFixed(1)
     : 'N/A';
@@ -203,7 +196,6 @@ function buildContext(state: ReturnType<typeof useApp>['state']): string {
     ? ((totalIncome - lastMonthIncome) / lastMonthIncome * 100).toFixed(1)
     : 'N/A';
 
-  // Category breakdown this month
   const categorySpend: Record<string, number> = {};
   thisMonth.filter(t => t.type === 'expense').forEach(t => {
     categorySpend[t.category] = (categorySpend[t.category] || 0) + t.amount;
@@ -218,7 +210,6 @@ function buildContext(state: ReturnType<typeof useApp>['state']): string {
     })
     .join(', ') || 'No expenses yet';
 
-  // 6-month category averages for pattern/anomaly detection
   const avgs6m = categoryAverages(transactions, 6);
   const avgsList = Object.entries(avgs6m)
     .sort(([, a], [, b]) => b - a)
@@ -226,13 +217,11 @@ function buildContext(state: ReturnType<typeof useApp>['state']): string {
     .map(([cat, avg]) => `${cat}: ${avg.toFixed(2)} ${currency}/month`)
     .join(', ') || 'Not enough history';
 
-  // Anomaly detection
   const anomalies = detectAnomalies(transactions, avgs6m, currency);
   const anomalySection = anomalies.length > 0
     ? `POTENTIAL ANOMALIES (unusually large transactions, last 30 days):\n${anomalies.join('\n')}`
     : 'No anomalies detected in the last 30 days.';
 
-  // Spending forecast (avg of last 3 months expense)
   const m1 = monthExpenses(transactions, 1);
   const m2 = monthExpenses(transactions, 2);
   const m3 = monthExpenses(transactions, 3);
@@ -241,16 +230,13 @@ function buildContext(state: ReturnType<typeof useApp>['state']): string {
     ? (validMonths.reduce((a, b) => a + b, 0) / validMonths.length).toFixed(2)
     : 'Insufficient data';
 
-  // Financial health score
   const { score: healthScore, breakdown: healthBreakdown } = computeHealthScore(
     totalIncome, totalExpense, budgets, categorySpend
   );
   const healthLabel = healthScore >= 75 ? 'Excellent' : healthScore >= 55 ? 'Good' : healthScore >= 35 ? 'Fair' : 'Needs Work';
 
-  // User personality
   const personality = userPersonality(transactions, 6);
 
-  // Budget section
   const budgetKeys = Object.keys(budgets);
   const budgetSection = budgetKeys.length > 0
     ? budgetKeys.map(cat => {
@@ -262,17 +248,14 @@ function buildContext(state: ReturnType<typeof useApp>['state']): string {
       }).join('\n')
     : 'No budgets set';
 
-  // Transaction list (most recent 30)
   const txList = transactions.slice(0, 30).map(t =>
     `[id:${t.id}] ${t.date.slice(0, 10)} | ${t.type} | ${t.amount.toFixed(2)} ${currency} | ${t.category}${t.note ? ' | ' + t.note : ''}`
   ).join('\n') || 'No transactions yet';
 
-  // Card list with benefits
   const cardList = cards.map(c =>
     `[id:${c.id}] ${c.name} | ···· ${c.lastFour} | due: ${c.dueDate}${c.benefits ? ' | benefits: ' + c.benefits : ''}${c.annualFee ? ' | annual fee: ' + c.annualFee : ''}`
   ).join('\n') || 'No cards';
 
-  // Goals
   const goalsList = (goals || []).length > 0
     ? (goals || []).map(g => {
         const pct = Math.round((g.savedAmount / g.targetAmount) * 100);
@@ -357,10 +340,178 @@ const INSIGHT_CHIPS = [
   { icon: 'document-text-outline' as const, labelKey: 'insightChipSummary' },
 ];
 
+function createStyles(theme: AppTheme, darkMode: boolean) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.colors.background },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 16,
+      backgroundColor: theme.colors.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    avatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
+    headerSub: { fontSize: 12, color: theme.colors.textFaint, marginTop: 1 },
+    closeBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: darkMode ? theme.colors.surfaceMuted : '#F0F0F5',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    warningBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: darkMode ? '#3D2020' : '#FFF3F0',
+      padding: 12,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: darkMode ? '#5A2D2D' : '#FEDDDD',
+    },
+    warningText: { flex: 1, fontSize: 13, color: darkMode ? '#F87171' : '#E17055' },
+    messages: { flex: 1 },
+    messagesContent: { padding: 16, paddingBottom: 8 },
+    welcomeContainer: { alignItems: 'center', paddingVertical: 16, paddingHorizontal: 4 },
+    welcomeAvatar: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: darkMode ? '#2D2A4A' : '#EEE9FF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 12,
+    },
+    welcomeTitle: { fontSize: 22, fontWeight: '700', color: theme.colors.text, marginBottom: 8 },
+    welcomeText: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
+    insightSectionTitle: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: theme.colors.textFaint,
+      letterSpacing: 0.5,
+      textTransform: 'uppercase',
+      alignSelf: 'flex-start',
+      marginBottom: 8,
+      marginTop: 4,
+    },
+    insightGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      width: '100%',
+      marginBottom: 16,
+    },
+    insightChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: darkMode ? '#2D2A4A' : '#EEE9FF',
+      borderRadius: 20,
+      paddingVertical: 7,
+      paddingHorizontal: 12,
+    },
+    insightChipText: { fontSize: 13, color: theme.colors.primary, fontWeight: '600' },
+    quickQuestions: { width: '100%', gap: 8 },
+    quickChip: {
+      backgroundColor: theme.colors.surface,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      padding: 12,
+      paddingHorizontal: 14,
+    },
+    quickChipText: { fontSize: 14, color: theme.colors.text },
+    msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginVertical: 4 },
+    msgRowUser: { justifyContent: 'flex-end' },
+    msgRowAI: { justifyContent: 'flex-start' },
+    msgAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: darkMode ? '#2D2A4A' : '#EEE9FF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    msgBubble: { maxWidth: '78%', borderRadius: 18, padding: 12, paddingHorizontal: 14 },
+    msgBubbleUser: { backgroundColor: theme.colors.primary, borderBottomRightRadius: 4 },
+    msgBubbleAI: {
+      backgroundColor: theme.colors.surface,
+      borderBottomLeftRadius: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: darkMode ? 0.2 : 0.06,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    msgText: { fontSize: 15, lineHeight: 21 },
+    msgTextUser: { color: '#fff' },
+    msgTextAI: { color: theme.colors.text },
+    actionsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 2, marginBottom: 4 },
+    actionsAvatarSpacer: { width: 28, flexShrink: 0 },
+    actionsBubble: {
+      backgroundColor: darkMode ? '#1A2E1A' : '#EAFFEA',
+      borderWidth: 1,
+      borderColor: darkMode ? '#2D4A2D' : '#B2DFDB',
+      borderRadius: 12,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      gap: 4,
+      maxWidth: '78%',
+    },
+    actionLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    actionText: { fontSize: 13, color: theme.colors.success, flex: 1 },
+    inputBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 12,
+      gap: 10,
+      backgroundColor: theme.colors.surface,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+    },
+    textInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      fontSize: 15,
+      backgroundColor: theme.colors.surfaceMuted,
+      color: theme.colors.text,
+      maxHeight: 100,
+    },
+    sendBtn: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sendBtnDisabled: { backgroundColor: darkMode ? '#3E4250' : '#B2BEC3' },
+  });
+}
+
 export default function AIScreen({ visible, onClose }: Props) {
   const { state, dispatch } = useApp();
+  const theme = useTheme();
   const t = useTranslation();
   const insets = useSafeAreaInsets();
+  const styles = useMemo(() => createStyles(theme, state.darkMode), [theme, state.darkMode]);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -473,13 +624,13 @@ export default function AIScreen({ visible, onClose }: Props) {
             </View>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-            <Ionicons name="close" size={22} color="#636E72" />
+            <Ionicons name="close" size={22} color={theme.colors.textMuted} />
           </TouchableOpacity>
         </View>
 
         {!apiKey && (
           <View style={styles.warningBanner}>
-            <Ionicons name="warning-outline" size={16} color="#E17055" />
+            <Ionicons name="warning-outline" size={16} color={state.darkMode ? '#F87171' : '#E17055'} />
             <Text style={styles.warningText}>{t('addApiKeyHint')}</Text>
           </View>
         )}
@@ -497,7 +648,7 @@ export default function AIScreen({ visible, onClose }: Props) {
             {messages.length === 0 && (
               <View style={styles.welcomeContainer}>
                 <View style={styles.welcomeAvatar}>
-                  <Ionicons name="sparkles" size={32} color="#6C5CE7" />
+                  <Ionicons name="sparkles" size={32} color={theme.colors.primary} />
                 </View>
                 <Text style={styles.welcomeTitle}>{t('hiImPockyt')}</Text>
                 <Text style={styles.welcomeText}>{t('welcomeText')}</Text>
@@ -510,7 +661,7 @@ export default function AIScreen({ visible, onClose }: Props) {
                       style={styles.insightChip}
                       onPress={() => sendMessage(quickPrompts[chip.labelKey])}
                     >
-                      <Ionicons name={chip.icon} size={18} color="#6C5CE7" />
+                      <Ionicons name={chip.icon} size={18} color={theme.colors.primary} />
                       <Text style={styles.insightChipText}>{t(chip.labelKey as any)}</Text>
                     </TouchableOpacity>
                   ))}
@@ -532,7 +683,7 @@ export default function AIScreen({ visible, onClose }: Props) {
                 <View style={[styles.msgRow, msg.role === 'user' ? styles.msgRowUser : styles.msgRowAI]}>
                   {msg.role === 'assistant' && (
                     <View style={styles.msgAvatar}>
-                      <Ionicons name="sparkles" size={13} color="#6C5CE7" />
+                      <Ionicons name="sparkles" size={13} color={theme.colors.primary} />
                     </View>
                   )}
                   <View style={[styles.msgBubble, msg.role === 'user' ? styles.msgBubbleUser : styles.msgBubbleAI]}>
@@ -548,7 +699,7 @@ export default function AIScreen({ visible, onClose }: Props) {
                     <View style={styles.actionsBubble}>
                       {msg.actions.map((action, j) => (
                         <View key={j} style={styles.actionLine}>
-                          <Ionicons name="checkmark-circle" size={14} color="#00B894" />
+                          <Ionicons name="checkmark-circle" size={14} color={theme.colors.success} />
                           <Text style={styles.actionText}>{action}</Text>
                         </View>
                       ))}
@@ -561,10 +712,10 @@ export default function AIScreen({ visible, onClose }: Props) {
             {loading && (
               <View style={[styles.msgRow, styles.msgRowAI]}>
                 <View style={styles.msgAvatar}>
-                  <Ionicons name="sparkles" size={13} color="#6C5CE7" />
+                  <Ionicons name="sparkles" size={13} color={theme.colors.primary} />
                 </View>
                 <View style={[styles.msgBubble, styles.msgBubbleAI, { paddingHorizontal: 20 }]}>
-                  <ActivityIndicator size="small" color="#6C5CE7" />
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
                 </View>
               </View>
             )}
@@ -574,6 +725,7 @@ export default function AIScreen({ visible, onClose }: Props) {
             <TextInput
               style={styles.textInput}
               placeholder={t('askAnything')}
+              placeholderTextColor={theme.colors.textFaint}
               value={input}
               onChangeText={setInput}
               multiline
@@ -592,169 +744,3 @@ export default function AIScreen({ visible, onClose }: Props) {
     </Modal>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
-  headerSub: { fontSize: 12, color: theme.colors.textFaint, marginTop: 1 },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F0F0F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  warningBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFF3F0',
-    padding: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#FEDDDD',
-  },
-  warningText: { flex: 1, fontSize: 13, color: '#E17055' },
-  messages: { flex: 1 },
-  messagesContent: { padding: 16, paddingBottom: 8 },
-  welcomeContainer: { alignItems: 'center', paddingVertical: 16, paddingHorizontal: 4 },
-  welcomeAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#EEE9FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  welcomeTitle: { fontSize: 22, fontWeight: '700', color: theme.colors.text, marginBottom: 8 },
-  welcomeText: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 16 },
-
-  insightSectionTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#B2BEC3',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-    marginTop: 4,
-  },
-  insightGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    width: '100%',
-    marginBottom: 16,
-  },
-  insightChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EEE9FF',
-    borderRadius: 20,
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-  },
-  insightChipText: { fontSize: 13, color: theme.colors.primary, fontWeight: '600' },
-
-  quickQuestions: { width: '100%', gap: 8 },
-  quickChip: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    padding: 12,
-    paddingHorizontal: 14,
-  },
-  quickChipText: { fontSize: 14, color: theme.colors.text },
-
-  msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginVertical: 4 },
-  msgRowUser: { justifyContent: 'flex-end' },
-  msgRowAI: { justifyContent: 'flex-start' },
-  msgAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#EEE9FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  msgBubble: { maxWidth: '78%', borderRadius: 18, padding: 12, paddingHorizontal: 14 },
-  msgBubbleUser: { backgroundColor: theme.colors.primary, borderBottomRightRadius: 4 },
-  msgBubbleAI: {
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  msgText: { fontSize: 15, lineHeight: 21 },
-  msgTextUser: { color: '#fff' },
-  msgTextAI: { color: theme.colors.text },
-  actionsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 2, marginBottom: 4 },
-  actionsAvatarSpacer: { width: 28, flexShrink: 0 },
-  actionsBubble: {
-    backgroundColor: '#EAFFEA',
-    borderWidth: 1,
-    borderColor: '#B2DFDB',
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    gap: 4,
-    maxWidth: '78%',
-  },
-  actionLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actionText: { fontSize: 13, color: '#00B894', flex: 1 },
-  inputBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    gap: 10,
-    backgroundColor: theme.colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
-  textInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
-    backgroundColor: theme.colors.surfaceMuted,
-    maxHeight: 100,
-  },
-  sendBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtnDisabled: { backgroundColor: '#B2BEC3' },
-});

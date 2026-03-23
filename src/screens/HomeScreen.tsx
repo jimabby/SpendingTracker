@@ -13,9 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BarChart, PieChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
+import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { CATEGORY_COLORS } from '../constants/categories';
-import { theme } from '../constants/theme';
+import { AppTheme } from '../constants/theme';
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, subMonths } from 'date-fns';
 import GoalsScreen from './GoalsScreen';
 
@@ -23,25 +24,28 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHART_WIDTH = SCREEN_WIDTH - 48;
 const BAR_WIDTH = CHART_WIDTH - 32;
 
-const chartConfig = {
-  backgroundGradientFrom: '#fff',
-  backgroundGradientTo: '#fff',
-  color: (opacity = 1) => `rgba(91, 108, 255, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(99, 110, 114, ${opacity})`,
-  barPercentage: 0.6,
-  decimalPlaces: 0,
-};
-
 export default function HomeScreen() {
   const { state } = useApp();
+  const theme = useTheme();
   const t = useTranslation();
-  const { transactions, currency, budgets } = state;
+  const { transactions, currency, budgets, language } = state;
   const goals = state.goals || [];
   const [period, setPeriod] = useState<'month' | 'year'>('month');
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
   const [goalsVisible, setGoalsVisible] = useState(false);
+  const styles = useMemo(() => createStyles(theme, state.darkMode), [theme, state.darkMode]);
 
+  const locale = language === 'zh' ? 'zh-CN' : 'en-US';
   const now = new Date();
+
+  const chartConfig = useMemo(() => ({
+    backgroundGradientFrom: theme.colors.surface,
+    backgroundGradientTo: theme.colors.surface,
+    color: (opacity = 1) => `rgba(91, 108, 255, ${opacity})`,
+    labelColor: () => theme.colors.textMuted,
+    barPercentage: 0.6,
+    decimalPlaces: 0,
+  }), [theme]);
 
   const thisMonth = useMemo(
     () =>
@@ -94,10 +98,10 @@ export default function HomeScreen() {
         name: name.length > 12 ? name.slice(0, 12) + '…' : name,
         population: amount,
         color: CATEGORY_COLORS[name] || '#B2BEC3',
-        legendFontColor: '#636E72',
+        legendFontColor: theme.colors.textMuted,
         legendFontSize: 11,
       })),
-    [categoryEntries]
+    [categoryEntries, theme]
   );
 
   const barData = useMemo(() => {
@@ -114,8 +118,10 @@ export default function HomeScreen() {
       labels.push(format(month, 'MMM'));
       data.push(total);
     }
-    return { labels, datasets: [{ data }] };
+    return { labels, datasets: [{ data: data.length > 0 ? data : [0] }] };
   }, [transactions, period]);
+
+  const hasBarData = barData.datasets[0].data.some(v => v > 0);
 
   const drillTxs = useMemo(
     () =>
@@ -128,7 +134,7 @@ export default function HomeScreen() {
   );
 
   const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+    new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -168,7 +174,7 @@ export default function HomeScreen() {
 
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>{t('netBalance')}</Text>
-          <Text style={[styles.balanceAmount, { color: balance >= 0 ? '#00B894' : '#D63031' }]}>
+          <Text style={[styles.balanceAmount, { color: balance >= 0 ? theme.colors.success : theme.colors.danger }]}>
             {fmt(balance)}
           </Text>
         </View>
@@ -224,7 +230,7 @@ export default function HomeScreen() {
                 <View style={[styles.catDot, { backgroundColor: CATEGORY_COLORS[cat] || '#B2BEC3' }]} />
                 <Text style={styles.catName}>{cat}</Text>
                 <Text style={styles.catAmt}>{fmt(amount)}</Text>
-                <Ionicons name="chevron-forward" size={14} color="#B2BEC3" />
+                <Ionicons name="chevron-forward" size={14} color={theme.colors.textFaint} />
               </TouchableOpacity>
             ))}
           </View>
@@ -234,17 +240,24 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle}>
             {period === 'year' ? t('annualExpenses') : t('monthlyExpenses')}
           </Text>
-          <BarChart
-            data={barData}
-            width={CHART_WIDTH}
-            height={180}
-            chartConfig={chartConfig}
-            style={{ borderRadius: 12, marginLeft: -16 }}
-            showValuesOnTopOfBars={false}
-            fromZero
-            yAxisLabel=""
-            yAxisSuffix=""
-          />
+          {hasBarData ? (
+            <BarChart
+              data={barData}
+              width={CHART_WIDTH}
+              height={180}
+              chartConfig={chartConfig}
+              style={{ borderRadius: 12, marginLeft: -16 }}
+              showValuesOnTopOfBars={false}
+              fromZero
+              yAxisLabel=""
+              yAxisSuffix=""
+            />
+          ) : (
+            <View style={styles.chartEmpty}>
+              <Ionicons name="bar-chart-outline" size={40} color={theme.colors.textFaint} />
+              <Text style={styles.chartEmptyText}>{t('noExpenseData')}</Text>
+            </View>
+          )}
         </View>
 
         {period === 'month' && Object.keys(budgets).length > 0 && (
@@ -253,12 +266,12 @@ export default function HomeScreen() {
             {Object.entries(budgets).map(([cat, limit]) => {
               const spent = categorySpend[cat] || 0;
               const pct = limit > 0 ? spent / limit : 0;
-              const barColor = pct >= 1 ? '#D63031' : pct >= 0.8 ? '#E17055' : '#6C5CE7';
+              const barColor = pct >= 1 ? theme.colors.danger : pct >= 0.8 ? theme.colors.warning : theme.colors.primary;
               return (
                 <View key={cat} style={styles.budgetRow}>
                   <View style={styles.budgetLabelRow}>
                     <Text style={styles.budgetCat}>{cat}</Text>
-                    <Text style={[styles.budgetAmt, { color: pct >= 1 ? '#D63031' : '#636E72' }]}>
+                    <Text style={[styles.budgetAmt, { color: pct >= 1 ? theme.colors.danger : theme.colors.textMuted }]}>
                       {fmt(spent)} / {fmt(limit)}
                     </Text>
                   </View>
@@ -306,7 +319,7 @@ export default function HomeScreen() {
                 <Text style={styles.modalTitle}>{drillCategory}</Text>
               </View>
               <TouchableOpacity onPress={() => setDrillCategory(null)}>
-                <Ionicons name="close" size={24} color="#636E72" />
+                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
             <Text style={styles.drillTotal}>
@@ -325,7 +338,7 @@ export default function HomeScreen() {
                   <Text
                     style={[
                       styles.drillAmt,
-                      { color: item.type === 'income' ? '#00B894' : '#D63031' },
+                      { color: item.type === 'income' ? theme.colors.success : theme.colors.danger },
                     ]}
                   >
                     {item.type === 'income' ? '+' : '-'}
@@ -334,7 +347,7 @@ export default function HomeScreen() {
                 </View>
               )}
               ListEmptyComponent={
-                <Text style={styles.drillEmpty}>No transactions</Text>
+                <Text style={styles.drillEmpty}>{t('noTransactions')}</Text>
               }
             />
           </View>
@@ -344,128 +357,133 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 16, paddingBottom: 32 },
-  header: { fontSize: 28, fontWeight: '800', color: theme.colors.text },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  month: { fontSize: 14, color: theme.colors.textMuted, marginTop: 2 },
-  periodToggle: {
-    flexDirection: 'row',
-    gap: 4,
-    backgroundColor: theme.colors.surfaceMuted,
-    borderRadius: 20,
-    padding: 4,
-    alignSelf: 'flex-start',
-    marginTop: 6,
-  },
-  periodBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
-  periodBtnActive: { backgroundColor: theme.colors.primary },
-  periodBtnText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
-  periodBtnTextActive: { color: '#fff' },
-  summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  card: {
-    flex: 1,
-    borderRadius: theme.radius.lg,
-    padding: 16,
-    ...theme.shadow.card,
-  },
-  incomeCard: { backgroundColor: '#E8F8F3' },
-  expenseCard: { backgroundColor: '#FFEAEA' },
-  cardLabel: { fontSize: 12, color: theme.colors.textMuted, marginBottom: 4 },
-  cardAmount: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
-  goalsCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    padding: 16,
-    marginBottom: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    ...theme.shadow.card,
-  },
-  goalsCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  goalsIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: theme.colors.primary + '18',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  goalsCardTitle: { fontSize: 15, fontWeight: '700', color: theme.colors.text },
-  goalsCardSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
-  goalsCardRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  goalsCardPct: { fontSize: 16, fontWeight: '800', color: theme.colors.primary },
-  balanceCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    padding: 16,
-    marginBottom: 12,
-    alignItems: 'center',
-    ...theme.shadow.card,
-  },
-  balanceLabel: { fontSize: 13, color: theme.colors.textMuted },
-  balanceAmount: { fontSize: 32, fontWeight: '700', marginTop: 4 },
-  section: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    padding: 16,
-    marginBottom: 16,
-    ...theme.shadow.card,
-    overflow: 'hidden',
-  },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text, marginBottom: 12 },
-  catRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    gap: 8,
-  },
-  catDot: { width: 10, height: 10, borderRadius: 5 },
-  catName: { flex: 1, fontSize: 14, color: theme.colors.text, fontWeight: '500' },
-  catAmt: { fontSize: 14, fontWeight: '700', color: theme.colors.text },
-  empty: { alignItems: 'center', marginTop: 32 },
-  emptyText: { fontSize: 16, color: theme.colors.textMuted, fontWeight: '500' },
-  emptyHint: { fontSize: 13, color: theme.colors.textFaint, marginTop: 4, textAlign: 'center' },
-  budgetRow: { marginBottom: 14 },
-  budgetLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  budgetCat: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
-  budgetAmt: { fontSize: 12 },
-  progressBg: { height: 8, backgroundColor: theme.colors.surfaceMuted, borderRadius: 4, overflow: 'hidden' },
-  progressFill: { height: 8, borderRadius: 4 },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  modalSheet: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: theme.colors.text },
-  drillTotal: { fontSize: 28, fontWeight: '700', color: '#D63031', marginBottom: 16 },
-  drillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  drillNote: { fontSize: 14, color: theme.colors.text, fontWeight: '500' },
-  drillDate: { fontSize: 12, color: theme.colors.textFaint, marginTop: 2 },
-  drillAmt: { fontSize: 15, fontWeight: '700' },
-  drillEmpty: { textAlign: 'center', color: theme.colors.textFaint, paddingVertical: 24 },
-});
+function createStyles(theme: AppTheme, darkMode: boolean) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.colors.background },
+    content: { padding: 16, paddingBottom: 32 },
+    header: { fontSize: 28, fontWeight: '800', color: theme.colors.text },
+    headerRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 16,
+    },
+    month: { fontSize: 14, color: theme.colors.textMuted, marginTop: 2 },
+    periodToggle: {
+      flexDirection: 'row',
+      gap: 4,
+      backgroundColor: theme.colors.surfaceMuted,
+      borderRadius: 20,
+      padding: 4,
+      alignSelf: 'flex-start',
+      marginTop: 6,
+    },
+    periodBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
+    periodBtnActive: { backgroundColor: theme.colors.primary },
+    periodBtnText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
+    periodBtnTextActive: { color: '#fff' },
+    summaryRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+    card: {
+      flex: 1,
+      borderRadius: theme.radius.lg,
+      padding: 16,
+      ...theme.shadow.card,
+    },
+    incomeCard: { backgroundColor: darkMode ? '#0D3326' : '#E8F8F3' },
+    expenseCard: { backgroundColor: darkMode ? '#3D1515' : '#FFEAEA' },
+    cardLabel: { fontSize: 12, color: theme.colors.textMuted, marginBottom: 4 },
+    cardAmount: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
+    goalsCard: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      padding: 16,
+      marginBottom: 24,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      ...theme.shadow.card,
+    },
+    goalsCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    goalsIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      backgroundColor: theme.colors.primary + '18',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    goalsCardTitle: { fontSize: 15, fontWeight: '700', color: theme.colors.text },
+    goalsCardSub: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+    goalsCardRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    goalsCardPct: { fontSize: 16, fontWeight: '800', color: theme.colors.primary },
+    balanceCard: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      padding: 16,
+      marginBottom: 12,
+      alignItems: 'center',
+      ...theme.shadow.card,
+    },
+    balanceLabel: { fontSize: 13, color: theme.colors.textMuted },
+    balanceAmount: { fontSize: 32, fontWeight: '700', marginTop: 4 },
+    section: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      padding: 16,
+      marginBottom: 16,
+      ...theme.shadow.card,
+      overflow: 'hidden',
+    },
+    sectionTitle: { fontSize: 16, fontWeight: '700', color: theme.colors.text, marginBottom: 12 },
+    catRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderTopWidth: 1,
+      borderTopColor: theme.colors.border,
+      gap: 8,
+    },
+    catDot: { width: 10, height: 10, borderRadius: 5 },
+    catName: { flex: 1, fontSize: 14, color: theme.colors.text, fontWeight: '500' },
+    catAmt: { fontSize: 14, fontWeight: '700', color: theme.colors.text },
+    empty: { alignItems: 'center', marginTop: 32 },
+    emptyText: { fontSize: 16, color: theme.colors.textMuted, fontWeight: '500' },
+    emptyHint: { fontSize: 13, color: theme.colors.textFaint, marginTop: 4, textAlign: 'center' },
+    chartEmpty: { alignItems: 'center', paddingVertical: 32 },
+    chartEmptyText: { fontSize: 13, color: theme.colors.textFaint, marginTop: 8 },
+    budgetRow: { marginBottom: 14 },
+    budgetLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+    budgetCat: { fontSize: 13, fontWeight: '600', color: theme.colors.text },
+    budgetAmt: { fontSize: 12 },
+    progressBg: { height: 8, backgroundColor: theme.colors.surfaceMuted, borderRadius: 4, overflow: 'hidden' },
+    progressFill: { height: 8, borderRadius: 4 },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    modalSheet: {
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: 24,
+      paddingBottom: 40,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 8,
+    },
+    modalTitle: { fontSize: 20, fontWeight: '700', color: theme.colors.text },
+    drillTotal: { fontSize: 28, fontWeight: '700', color: theme.colors.danger, marginBottom: 16 },
+    drillRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    drillNote: { fontSize: 14, color: theme.colors.text, fontWeight: '500' },
+    drillDate: { fontSize: 12, color: theme.colors.textFaint, marginTop: 2 },
+    drillAmt: { fontSize: 15, fontWeight: '700' },
+    drillEmpty: { textAlign: 'center', color: theme.colors.textFaint, paddingVertical: 24 },
+  });
+}
+

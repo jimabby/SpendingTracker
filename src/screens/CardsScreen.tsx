@@ -17,11 +17,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
+import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { Card } from '../types';
 import { CARD_COLORS } from '../constants/categories';
 import { detectBankDomain, logoUrl, KNOWN_BANKS, getBankInfo } from '../constants/banks';
-import { theme } from '../constants/theme';
+import { AppTheme } from '../constants/theme';
 import {
   setupNotificationChannel,
   requestNotificationPermissions,
@@ -48,7 +49,7 @@ function ordinal(day: number): string {
 
 function parseDueDay(dueDate: string): number {
   const parts = dueDate.split('-').map(Number);
-  return parts[parts.length - 1]; // handles both old "M-D" and new "D" format
+  return parts[parts.length - 1];
 }
 
 function daysUntilDue(dueDate: string): number {
@@ -74,10 +75,9 @@ function BankBadge({ domain, size = 36 }: { domain: string; size?: number }) {
   const offset = Math.round((size - imgSize) / 2);
 
   return (
-    <View style={[styles.logoWrap, { width: size, height: size, borderRadius: size / 2, backgroundColor: bgColor }]}>
-      {/* Initials shown until image loads */}
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bgColor, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
       {(!imgLoaded || imgFailed) && (
-        <Text style={[styles.logoInitials, { fontSize: size * 0.32 }]}>{initials}</Text>
+        <Text style={{ color: '#fff', fontWeight: '700', letterSpacing: 0.5, fontSize: size * 0.32 }}>{initials}</Text>
       )}
       {!imgFailed && (
         <Image
@@ -103,6 +103,9 @@ function CardItem({
   card,
   spent,
   currency,
+  locale,
+  theme,
+  styles,
   onDelete,
   onEdit,
   onToggleReminder,
@@ -110,6 +113,9 @@ function CardItem({
   card: Card;
   spent: number;
   currency: string;
+  locale: string;
+  theme: AppTheme;
+  styles: any;
   onDelete: (id: string) => void;
   onEdit: (card: Card) => void;
   onToggleReminder: (card: Card) => void;
@@ -118,7 +124,7 @@ function CardItem({
   const days = daysUntilDue(card.dueDate);
   const dueDay = parseDueDay(card.dueDate);
   const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+    new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n);
 
   return (
     <View style={[styles.cardItem, { backgroundColor: card.color }]}>
@@ -192,8 +198,11 @@ function CardItem({
 
 export default function CardsScreen() {
   const { state, dispatch } = useApp();
+  const theme = useTheme();
   const t = useTranslation();
-  const { cards, transactions, currency } = state;
+  const { cards, transactions, currency, language } = state;
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const locale = language === 'zh' ? 'zh-CN' : 'en-US';
 
   const scrollViewRef = useRef<ScrollView>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -267,7 +276,7 @@ export default function CardsScreen() {
       benefits: benefits.trim(),
       color: selectedColor,
       reminderEnabled,
-      annualFee: annualFee.trim() ? parseFloat(annualFee) : undefined,
+      annualFee: annualFee.trim() ? Math.max(0, parseFloat(annualFee)) : undefined,
       anniversaryDate: hasAnniversary ? `${anniversaryMonth}-${anniversaryDay}` : undefined,
       bankDomain: bankDomain || undefined,
     };
@@ -276,7 +285,10 @@ export default function CardsScreen() {
   function handleSave() {
     if (!name.trim()) { Alert.alert(t('nameRequired')); return; }
     if (!/^\d{4}$/.test(lastFour)) { Alert.alert(t('enterLastFour')); return; }
-    if (annualFee.trim() && isNaN(parseFloat(annualFee))) { Alert.alert(t('invalidAmount')); return; }
+    if (annualFee.trim() && (isNaN(parseFloat(annualFee)) || parseFloat(annualFee) < 0)) {
+      Alert.alert(t('invalidAmount'));
+      return;
+    }
 
     if (editingCard) {
       const updated = buildCard(editingCard.id, editingCard.reminderEnabled);
@@ -328,6 +340,9 @@ export default function CardsScreen() {
             card={item}
             spent={cardSpending[item.id] || 0}
             currency={currency}
+            locale={locale}
+            theme={theme}
+            styles={styles}
             onDelete={handleDelete}
             onEdit={openEditModal}
             onToggleReminder={handleToggleReminder}
@@ -336,7 +351,7 @@ export default function CardsScreen() {
         contentContainerStyle={cards.length === 0 ? styles.emptyContainer : { padding: 16, gap: 16 }}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Ionicons name="card-outline" size={56} color="#B2BEC3" />
+            <Ionicons name="card-outline" size={56} color={theme.colors.textFaint} />
             <Text style={styles.emptyText}>{t('noCardsYet')}</Text>
             <Text style={styles.emptyHint}>{t('addCardsHint')}</Text>
           </View>
@@ -349,7 +364,7 @@ export default function CardsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{editingCard ? t('editCard') : t('addCard')}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#636E72" />
+                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -357,6 +372,7 @@ export default function CardsScreen() {
               <TextInput
                 style={styles.input}
                 placeholder={t('cardNamePlaceholder')}
+                placeholderTextColor={theme.colors.textFaint}
                 value={name}
                 onChangeText={v => {
                   setName(v);
@@ -367,33 +383,31 @@ export default function CardsScreen() {
                 }}
               />
 
-              {/* Bank logo preview */}
               {bankDomain ? (
                 <View style={styles.bankPreviewRow}>
                   <BankBadge domain={bankDomain} size={36} />
                   <Text style={styles.bankPreviewText}>{bankDomain}</Text>
                   <TouchableOpacity onPress={() => setBankDomain('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="close-circle" size={18} color="#B2BEC3" />
+                    <Ionicons name="close-circle" size={18} color={theme.colors.textFaint} />
                   </TouchableOpacity>
                 </View>
               ) : null}
 
-              {/* Select bank button */}
               <TouchableOpacity
                 style={styles.bankPickerBtn}
                 onPress={() => { setBankSearch(''); setShowBankList(v => !v); }}
               >
-                <Ionicons name="business-outline" size={15} color="#6C5CE7" />
-                <Text style={styles.bankPickerBtnText}>{bankDomain ? t('changeBank') : t('selectBank')}</Text>
-                <Ionicons name={showBankList ? 'chevron-up' : 'chevron-down'} size={14} color="#6C5CE7" />
+                <Ionicons name="business-outline" size={15} color={theme.colors.primary} />
+                <Text style={[styles.bankPickerBtnText, { color: theme.colors.primary }]}>{bankDomain ? t('changeBank') : t('selectBank')}</Text>
+                <Ionicons name={showBankList ? 'chevron-up' : 'chevron-down'} size={14} color={theme.colors.primary} />
               </TouchableOpacity>
 
-              {/* Inline bank list */}
               {showBankList && (
                 <View style={styles.bankListContainer}>
                   <TextInput
                     style={styles.bankSearchInput}
                     placeholder={t('searchBank')}
+                    placeholderTextColor={theme.colors.textFaint}
                     value={bankSearch}
                     onChangeText={setBankSearch}
                     clearButtonMode="while-editing"
@@ -412,7 +426,7 @@ export default function CardsScreen() {
                       >
                           <BankBadge domain={item.domain} size={38} />
                         <Text style={styles.bankRowName}>{item.name}</Text>
-                        {bankDomain === item.domain && <Ionicons name="checkmark" size={18} color="#6C5CE7" />}
+                        {bankDomain === item.domain && <Ionicons name="checkmark" size={18} color={theme.colors.primary} />}
                       </TouchableOpacity>
                     ))
                   }
@@ -422,13 +436,13 @@ export default function CardsScreen() {
               <TextInput
                 style={styles.input}
                 placeholder={t('lastFourDigits')}
+                placeholderTextColor={theme.colors.textFaint}
                 keyboardType="number-pad"
                 maxLength={4}
                 value={lastFour}
                 onChangeText={setLastFour}
               />
 
-              {/* Monthly due day */}
               <Text style={styles.inputLabel}>{t('monthlyDueDay')}</Text>
               <View style={styles.pickerSingle}>
                 <Picker
@@ -443,19 +457,18 @@ export default function CardsScreen() {
                 </Picker>
               </View>
 
-              {/* Annual fee */}
               <TextInput
                 style={styles.input}
                 placeholder={t('annualFeePlaceholder')}
+                placeholderTextColor={theme.colors.textFaint}
                 keyboardType="decimal-pad"
                 value={annualFee}
                 onChangeText={setAnnualFee}
               />
 
-              {/* Anniversary date */}
               <TouchableOpacity style={styles.toggleRow} onPress={() => setHasAnniversary(v => !v)}>
                 <Text style={styles.inputLabel}>{t('anniversaryDate')}</Text>
-                <Ionicons name={hasAnniversary ? 'chevron-up' : 'chevron-down'} size={16} color="#636E72" />
+                <Ionicons name={hasAnniversary ? 'chevron-up' : 'chevron-down'} size={16} color={theme.colors.textMuted} />
               </TouchableOpacity>
               {hasAnniversary && (
                 <View style={styles.pickerRow}>
@@ -489,17 +502,17 @@ export default function CardsScreen() {
                 </View>
               )}
 
-              {/* Benefits */}
               <TextInput
                 style={[styles.input, styles.inputMulti]}
                 placeholder={t('benefitsPlaceholder')}
+                placeholderTextColor={theme.colors.textFaint}
                 multiline
+                maxLength={200}
                 value={benefits}
                 onChangeText={setBenefits}
                 onFocus={() => setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100)}
               />
 
-              {/* Color */}
               <Text style={styles.inputLabel}>{t('cardColor')}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.colorRow}>
                 {CARD_COLORS.map(c => (
@@ -523,165 +536,152 @@ export default function CardsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    paddingTop: 20,
-  },
-  header: { fontSize: 28, fontWeight: '800', color: theme.colors.text },
-  addBtn: {
-    backgroundColor: theme.colors.primary,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardItem: {
-    borderRadius: theme.radius.lg,
-    padding: 20,
-    ...theme.shadow.card,
-    overflow: 'hidden',
-  },
-  cardLogoCorner: {
-    position: 'absolute',
-    bottom: 16,
-    right: 16,
-    opacity: 0.92,
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  cardName: { fontSize: 18, fontWeight: '700', color: '#fff', flex: 1 },
-  cardActions: { flexDirection: 'row', gap: 4, alignItems: 'center' },
-  actionBtn: { padding: 8 },
-  cardNumber: { fontSize: 16, color: 'rgba(255,255,255,0.8)', letterSpacing: 2, marginBottom: 16 },
-  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
-  cardDueLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 },
-  cardDueText: { fontSize: 14, color: '#fff', fontWeight: '600' },
-  extraRow: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.2)',
-    gap: 4,
-  },
-  extraItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  extraText: { fontSize: 11, color: 'rgba(255,255,255,0.8)', flex: 1 },
-  emptyContainer: { flex: 1, justifyContent: 'center' },
-  empty: { alignItems: 'center', paddingTop: 80 },
-  emptyText: { fontSize: 18, fontWeight: '600', color: theme.colors.textMuted, marginTop: 16 },
-  emptyHint: { fontSize: 13, color: theme.colors.textFaint, marginTop: 6, textAlign: 'center', paddingHorizontal: 32 },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  modalSheet: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-    maxHeight: '92%',
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: theme.colors.text },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 12,
-    backgroundColor: theme.colors.surfaceMuted,
-  },
-  inputMulti: { height: 72, textAlignVertical: 'top' },
-  inputLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted, marginBottom: 6 },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  pickerSingle: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    backgroundColor: theme.colors.surfaceMuted,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  pickerRow: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    backgroundColor: theme.colors.surfaceMuted,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  pickerCol: { flex: 1 },
-  pickerHeader: { textAlign: 'center', fontSize: 12, color: theme.colors.textMuted, paddingTop: 8 },
-  pickerDivider: { width: 1, backgroundColor: theme.colors.border, marginVertical: 8 },
-  picker: { height: 120 },
-  pickerItem: { fontSize: 16, height: 120 },
-  colorRow: { marginBottom: 20 },
-  colorDot: { width: 32, height: 32, borderRadius: 16, marginRight: 10 },
-  colorDotSelected: { borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
-  saveBtn: { backgroundColor: theme.colors.primary, borderRadius: 14, padding: 16, alignItems: 'center' },
-  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
-  // Bank badge (card widget + picker + preview)
-  logoWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  logoInitials: {
-    color: '#fff',
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-
-  // Bank preview in form
-  bankPreviewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#EEF0FF',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-  },
-  bankPreviewText: { flex: 1, fontSize: 13, color: theme.colors.textMuted },
-
-  bankPickerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    padding: 10,
-    marginBottom: 4,
-  },
-  bankPickerBtnText: { fontSize: 14, color: '#6C5CE7', fontWeight: '500', flex: 1 },
-
-  // Inline bank list
-  bankListContainer: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    backgroundColor: theme.colors.surface,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  bankSearchInput: {
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    padding: 12,
-    fontSize: 15,
-    backgroundColor: theme.colors.surfaceMuted,
-  },
-  bankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  bankRowName: { flex: 1, fontSize: 14, color: theme.colors.text },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.colors.background },
+    headerRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: 16,
+      paddingTop: 20,
+    },
+    header: { fontSize: 28, fontWeight: '800', color: theme.colors.text },
+    addBtn: {
+      backgroundColor: theme.colors.primary,
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    cardItem: {
+      borderRadius: theme.radius.lg,
+      padding: 20,
+      ...theme.shadow.card,
+      overflow: 'hidden',
+    },
+    cardLogoCorner: {
+      position: 'absolute',
+      bottom: 16,
+      right: 16,
+      opacity: 0.92,
+    },
+    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+    cardName: { fontSize: 18, fontWeight: '700', color: '#fff', flex: 1 },
+    cardActions: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+    actionBtn: { padding: 8 },
+    cardNumber: { fontSize: 16, color: 'rgba(255,255,255,0.8)', letterSpacing: 2, marginBottom: 16 },
+    cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+    cardDueLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 },
+    cardDueText: { fontSize: 14, color: '#fff', fontWeight: '600' },
+    extraRow: {
+      marginTop: 10,
+      paddingTop: 10,
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(255,255,255,0.2)',
+      gap: 4,
+    },
+    extraItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    extraText: { fontSize: 11, color: 'rgba(255,255,255,0.8)', flex: 1 },
+    emptyContainer: { flex: 1, justifyContent: 'center' },
+    empty: { alignItems: 'center', paddingTop: 80 },
+    emptyText: { fontSize: 18, fontWeight: '600', color: theme.colors.textMuted, marginTop: 16 },
+    emptyHint: { fontSize: 13, color: theme.colors.textFaint, marginTop: 6, textAlign: 'center', paddingHorizontal: 32 },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    modalSheet: {
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: 24,
+      paddingBottom: 40,
+      maxHeight: '92%',
+    },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 20, fontWeight: '700', color: theme.colors.text },
+    input: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      padding: 14,
+      fontSize: 15,
+      marginBottom: 12,
+      backgroundColor: theme.colors.surfaceMuted,
+      color: theme.colors.text,
+    },
+    inputMulti: { height: 72, textAlignVertical: 'top' },
+    inputLabel: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted, marginBottom: 6 },
+    toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+    pickerSingle: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      backgroundColor: theme.colors.surfaceMuted,
+      marginBottom: 12,
+      overflow: 'hidden',
+    },
+    pickerRow: {
+      flexDirection: 'row',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      backgroundColor: theme.colors.surfaceMuted,
+      marginBottom: 12,
+      overflow: 'hidden',
+    },
+    pickerCol: { flex: 1 },
+    pickerHeader: { textAlign: 'center', fontSize: 12, color: theme.colors.textMuted, paddingTop: 8 },
+    pickerDivider: { width: 1, backgroundColor: theme.colors.border, marginVertical: 8 },
+    picker: { height: 120, color: theme.colors.text },
+    pickerItem: { fontSize: 16, height: 120, color: theme.colors.text },
+    colorRow: { marginBottom: 20 },
+    colorDot: { width: 32, height: 32, borderRadius: 16, marginRight: 10 },
+    colorDotSelected: { borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
+    saveBtn: { backgroundColor: theme.colors.primary, borderRadius: 14, padding: 16, alignItems: 'center' },
+    saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+    bankPreviewRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: theme.colors.surfaceMuted,
+      borderRadius: 10,
+      padding: 10,
+      marginBottom: 8,
+    },
+    bankPreviewText: { flex: 1, fontSize: 13, color: theme.colors.textMuted },
+    bankPickerBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      padding: 10,
+      marginBottom: 4,
+    },
+    bankPickerBtnText: { fontSize: 14, fontWeight: '500', flex: 1 },
+    bankListContainer: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      backgroundColor: theme.colors.surface,
+      marginBottom: 12,
+      overflow: 'hidden',
+    },
+    bankSearchInput: {
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+      padding: 12,
+      fontSize: 15,
+      backgroundColor: theme.colors.surfaceMuted,
+      color: theme.colors.text,
+    },
+    bankRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    bankRowName: { flex: 1, fontSize: 14, color: theme.colors.text },
+  });
+}

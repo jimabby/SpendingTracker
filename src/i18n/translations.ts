@@ -16,6 +16,7 @@ export const translations = {
     monthlyExpenses: 'Monthly Expenses (6 months)',
     noTransactionsYet: 'No transactions yet.',
     addFirstTransaction: 'Add your first transaction in the Transactions tab.',
+    noExpenseData: 'No expense data yet',
 
     // Transactions screen
     transactions: 'Transactions',
@@ -81,6 +82,10 @@ export const translations = {
     deletePhoto: 'Delete',
     removePhotoPrompt: 'Remove this receipt photo?',
 
+    // Appearance
+    appearance: 'Appearance',
+    darkMode: 'Dark Mode',
+
     // Settings screen
     settingsHeader: 'Settings',
     preferences: 'Preferences',
@@ -99,6 +104,12 @@ export const translations = {
     saveApiKey: 'Save API Key',
     saved: 'Saved',
     apiKeySaved: 'API key saved successfully.',
+    backupData: 'Backup Data',
+    restoreData: 'Restore Data',
+    dataRestored: 'Data restored successfully.',
+    invalidBackupData: 'Invalid backup data.',
+    pasteBackupJson: 'Paste your backup JSON below:',
+    restoreHintAndroid: 'To restore, paste your backup JSON into the app data folder.',
     comingSoon: 'Coming Soon',
     cloudSync: 'Cloud Sync & Login',
     languageLabel: 'Language',
@@ -231,6 +242,14 @@ export const translations = {
     removeGoal: 'Remove this goal?',
     addTo: (name: string) => `Add to "${name}"`,
     amountToAdd: 'Amount to add',
+
+    // Recurring transactions management
+    recurringTransactions: 'Recurring Transactions',
+    manageRecurring: 'Manage Recurring',
+    noRecurringYet: 'No recurring transactions set up yet.',
+    deleteRecurring: 'Delete Recurring',
+    removeRecurringPrompt: 'Stop this recurring transaction?',
+    recurringCount: (n: number) => `${n} active`,
   },
 
   zh: {
@@ -250,6 +269,7 @@ export const translations = {
     monthlyExpenses: '近6个月支出',
     noTransactionsYet: '暂无交易记录。',
     addFirstTransaction: '在"支出"选项卡中添加您的第一笔交易。',
+    noExpenseData: '暂无支出数据',
 
     // Transactions screen
     transactions: '交易记录',
@@ -315,6 +335,10 @@ export const translations = {
     deletePhoto: '删除',
     removePhotoPrompt: '删除此收据照片？',
 
+    // Appearance
+    appearance: '外观',
+    darkMode: '深色模式',
+
     // Settings screen
     settingsHeader: '设置',
     preferences: '偏好设置',
@@ -333,6 +357,12 @@ export const translations = {
     saveApiKey: '保存 API 密钥',
     saved: '已保存',
     apiKeySaved: 'API 密钥已成功保存。',
+    backupData: '备份数据',
+    restoreData: '恢复数据',
+    dataRestored: '数据恢复成功。',
+    invalidBackupData: '备份数据无效。',
+    pasteBackupJson: '请在下方粘贴备份 JSON：',
+    restoreHintAndroid: '如需恢复，请将备份 JSON 粘贴到应用数据目录。',
     comingSoon: '即将推出',
     cloudSync: '云同步与登录',
     languageLabel: '语言',
@@ -465,6 +495,14 @@ export const translations = {
     removeGoal: '删除此目标？',
     addTo: (name: string) => `添加到"${name}"`,
     amountToAdd: '添加金额',
+
+    // Recurring transactions management
+    recurringTransactions: '定期交易',
+    manageRecurring: '管理定期交易',
+    noRecurringYet: '暂无定期交易。',
+    deleteRecurring: '删除定期交易',
+    removeRecurringPrompt: '停止此定期交易？',
+    recurringCount: (n: number) => `${n} 个进行中`,
   },
 } as const;
 

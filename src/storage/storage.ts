@@ -15,6 +15,7 @@ export const defaultState: AppState = {
   budgets: {},
   recurringTransactions: [],
   goals: [],
+  darkMode: false,
 };
 
 export async function loadState(): Promise<AppState> {
@@ -43,4 +44,33 @@ export async function clearState(): Promise<void> {
   } catch (e) {
     console.error('Failed to clear state', e);
   }
+}
+
+export async function exportState(): Promise<string> {
+  const json = await AsyncStorage.getItem(STORAGE_KEY);
+  return json || JSON.stringify(defaultState);
+}
+
+export async function importState(json: string): Promise<AppState> {
+  const parsed = JSON.parse(json);
+  const merged = { ...defaultState, ...parsed };
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+  return merged;
+}
+
+// Receipt photos persistence
+const PHOTOS_KEY = 'receipt_photos';
+
+export async function loadPhotos(): Promise<string[]> {
+  try {
+    const json = await AsyncStorage.getItem(PHOTOS_KEY);
+    if (json) return JSON.parse(json);
+  } catch {}
+  return [];
+}
+
+export async function savePhotos(photos: string[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(PHOTOS_KEY, JSON.stringify(photos));
+  } catch {}
 }

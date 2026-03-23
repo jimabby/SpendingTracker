@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Card, Transaction } from '../types';
 
 Notifications.setNotificationHandler({
@@ -65,9 +66,21 @@ export async function cancelCardReminder(cardId: string): Promise<void> {
 
 // --- Budget notifications ---
 
-// Tracks which category+threshold combos have already been notified this month.
-// Key format: "YYYY-MM:category:threshold" (threshold = '80' or '100')
-const notifiedBudgets = new Set<string>();
+const NOTIFIED_BUDGETS_KEY = 'notified_budgets';
+
+async function loadNotifiedBudgets(): Promise<Set<string>> {
+  try {
+    const json = await AsyncStorage.getItem(NOTIFIED_BUDGETS_KEY);
+    if (json) return new Set(JSON.parse(json));
+  } catch {}
+  return new Set();
+}
+
+async function saveNotifiedBudgets(set: Set<string>): Promise<void> {
+  try {
+    await AsyncStorage.setItem(NOTIFIED_BUDGETS_KEY, JSON.stringify([...set]));
+  } catch {}
+}
 
 export async function setupBudgetNotificationChannel(): Promise<void> {
   if (Platform.OS === 'android') {
@@ -82,13 +95,25 @@ export async function setupBudgetNotificationChannel(): Promise<void> {
 export async function checkBudgetNotifications(
   transactions: Transaction[],
   budgets: Record<string, number>,
-  currency: string
+  currency: string,
+  language?: string
 ): Promise<void> {
   const hasPermission = await requestNotificationPermissions();
   if (!hasPermission) return;
 
+  const notifiedBudgets = await loadNotifiedBudgets();
+  let changed = false;
+
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  // Clean up stale entries from previous months
+  for (const key of notifiedBudgets) {
+    if (!key.startsWith(monthKey)) {
+      notifiedBudgets.delete(key);
+      changed = true;
+    }
+  }
 
   // Sum expenses per category for current month
   const categorySpend: Record<string, number> = {};
@@ -98,8 +123,9 @@ export async function checkBudgetNotifications(
       categorySpend[tx.category] = (categorySpend[tx.category] || 0) + tx.amount;
     });
 
+  const locale = language === 'zh' ? 'zh-CN' : 'en-US';
   const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+    new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n);
 
   for (const [category, limit] of Object.entries(budgets)) {
     if (!limit || limit <= 0) continue;
@@ -111,6 +137,7 @@ export async function checkBudgetNotifications(
 
     if (pct >= 1 && !notifiedBudgets.has(key100)) {
       notifiedBudgets.add(key100);
+      changed = true;
       await Notifications.scheduleNotificationAsync({
         identifier: `budget-exceeded-${category}-${monthKey}`,
         content: {
@@ -124,6 +151,7 @@ export async function checkBudgetNotifications(
       });
     } else if (pct >= 0.8 && pct < 1 && !notifiedBudgets.has(key80)) {
       notifiedBudgets.add(key80);
+      changed = true;
       await Notifications.scheduleNotificationAsync({
         identifier: `budget-warning-${category}-${monthKey}`,
         content: {
@@ -136,5 +164,9 @@ export async function checkBudgetNotifications(
         trigger: null,
       });
     }
+  }
+
+  if (changed) {
+    await saveNotifiedBudgets(notifiedBudgets);
   }
 }

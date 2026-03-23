@@ -57,6 +57,7 @@ export interface AppState {
   budgets: Record<string, number>;
   recurringTransactions: RecurringTransaction[];
   goals: Goal[];
+  darkMode: boolean;
 }
 
 export type AppAction =
@@ -80,4 +81,6 @@ export type AppAction =
   | { type: 'ADD_GOAL'; payload: Goal }
   | { type: 'DELETE_GOAL'; payload: string }
   | { type: 'UPDATE_GOAL'; payload: Goal }
+  | { type: 'TOGGLE_DARK_MODE' }
+  | { type: 'IMPORT_STATE'; payload: AppState }
   | { type: 'LOAD_STATE'; payload: AppState };

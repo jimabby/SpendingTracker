@@ -37,7 +37,8 @@ export async function sendAIMessageWithTools(
       ];
 
       let finalText = '';
-      while (true) {
+      const MAX_TOOL_ROUNDS = 10;
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -58,10 +59,10 @@ export async function sendAIMessageWithTools(
           }
         } else {
           finalText = choice.message.content;
-          break;
+          return finalText;
         }
       }
-      return finalText;
+      return finalText || 'I completed the requested actions.';
     }
 
     case 'gemini': {
@@ -79,7 +80,8 @@ export async function sendAIMessageWithTools(
       }));
 
       let finalText = '';
-      while (true) {
+      const MAX_TOOL_ROUNDS = 10;
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
@@ -108,10 +110,10 @@ export async function sendAIMessageWithTools(
           contents.push({ role: 'user', parts: resultParts });
         } else {
           finalText = parts.find((p: any) => p.text)?.text || '';
-          break;
+          return finalText;
         }
       }
-      return finalText;
+      return finalText || 'I completed the requested actions.';
     }
 
     case 'claude': {
@@ -124,7 +126,8 @@ export async function sendAIMessageWithTools(
       let apiMessages: any[] = messages.map(m => ({ role: m.role, content: m.content }));
 
       let finalText = '';
-      while (true) {
+      const MAX_TOOL_ROUNDS = 10;
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
         const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -156,10 +159,10 @@ export async function sendAIMessageWithTools(
           apiMessages.push({ role: 'user', content: resultBlocks });
         } else {
           finalText = data.content.find((b: any) => b.type === 'text')?.text || '';
-          break;
+          return finalText;
         }
       }
-      return finalText;
+      return finalText || 'I completed the requested actions.';
     }
 
     default:

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,8 @@ import {
   Pressable,
   ActivityIndicator,
   Linking,
+  Share,
+  Switch,
 } from 'react-native';
 import { format } from 'date-fns';
 import * as Print from 'expo-print';
@@ -20,9 +22,10 @@ import * as MailComposer from 'expo-mail-composer';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
+import { useTheme } from '../context/ThemeContext';
 import { useTranslation } from '../hooks/useTranslation';
-import { clearState, defaultState } from '../storage/storage';
-import { theme } from '../constants/theme';
+import { clearState, defaultState, exportState, importState } from '../storage/storage';
+import { AppTheme } from '../constants/theme';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'HKD', 'SGD', 'AUD', 'CAD'];
 
@@ -39,22 +42,24 @@ function SettingRow({
   value,
   onPress,
   danger,
+  theme,
 }: {
   icon: string;
   label: string;
   value?: string;
   onPress: () => void;
   danger?: boolean;
+  theme: AppTheme;
 }) {
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress}>
-      <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-        <Ionicons name={icon as any} size={18} color={danger ? '#D63031' : '#6C5CE7'} />
+    <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border }} onPress={onPress}>
+      <View style={[{ width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: danger ? (theme.colors.danger + '18') : (theme.colors.primary + '18') }]}>
+        <Ionicons name={icon as any} size={18} color={danger ? theme.colors.danger : theme.colors.primary} />
       </View>
-      <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
-      <View style={styles.rowRight}>
-        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
-        <Ionicons name="chevron-forward" size={16} color="#B2BEC3" />
+      <Text style={[{ flex: 1, fontSize: 15, color: danger ? theme.colors.danger : theme.colors.text }]}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        {value ? <Text style={{ fontSize: 13, color: theme.colors.textMuted }}>{value}</Text> : null}
+        <Ionicons name="chevron-forward" size={16} color={theme.colors.textFaint} />
       </View>
     </TouchableOpacity>
   );
@@ -62,8 +67,11 @@ function SettingRow({
 
 export default function SettingsScreen() {
   const { state, dispatch } = useApp();
+  const theme = useTheme();
   const t = useTranslation();
-  const { currency, categories, aiProvider, aiKey, language, budgets, transactions } = state;
+  const { currency, categories, aiProvider, aiKey, language, budgets, transactions, recurringTransactions } = state;
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const locale = language === 'zh' ? 'zh-CN' : 'en-US';
 
   const [catModalVisible, setCatModalVisible] = useState(false);
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
@@ -72,6 +80,9 @@ export default function SettingsScreen() {
   const [emailModalVisible, setEmailModalVisible] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [emailSending, setEmailSending] = useState(false);
+  const [restoreModalVisible, setRestoreModalVisible] = useState(false);
+  const [restoreInput, setRestoreInput] = useState('');
+  const [recurringModalVisible, setRecurringModalVisible] = useState(false);
   const [newCat, setNewCat] = useState('');
   const [keyInput, setKeyInput] = useState(aiKey);
   const [showKey, setShowKey] = useState(false);
@@ -122,7 +133,7 @@ export default function SettingsScreen() {
     await new Promise(resolve => setTimeout(resolve, 700));
     try {
       const fmt = (n: number) =>
-        new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+        new Intl.NumberFormat(locale, { style: 'currency', currency }).format(n);
 
       const totalIncome = transactions
         .filter(tx => tx.type === 'income')
@@ -131,7 +142,6 @@ export default function SettingsScreen() {
         .filter(tx => tx.type === 'expense')
         .reduce((s, tx) => s + tx.amount, 0);
 
-      // Group transactions by month
       const byMonth: Record<string, typeof transactions> = {};
       transactions.forEach(tx => {
         const key = tx.date.slice(0, 7);
@@ -147,12 +157,12 @@ export default function SettingsScreen() {
           .map(tx => {
             const isExpense = tx.type === 'expense';
             const amtColor = isExpense ? '#D63031' : '#00B894';
-            const sign = isExpense ? '−' : '+';
+            const sign = isExpense ? '\u2212' : '+';
             return `
               <tr>
                 <td>${format(new Date(tx.date), 'MMM d')}</td>
                 <td>${tx.category}</td>
-                <td>${tx.note || '—'}</td>
+                <td>${tx.note || '\u2014'}</td>
                 <td style="color:${amtColor};font-weight:600;text-align:right">${sign}${fmt(tx.amount)}</td>
               </tr>`;
           }).join('');
@@ -204,7 +214,7 @@ export default function SettingsScreen() {
         </head>
         <body>
           <div class="logo">Pockyt</div>
-          <div class="subtitle">Transaction Report · Generated ${format(new Date(), 'MMMM d, yyyy')}</div>
+          <div class="subtitle">Transaction Report \u00b7 Generated ${format(new Date(), 'MMMM d, yyyy')}</div>
           <div class="summary">
             <div class="summary-card income">
               <div class="summary-label">Total Income</div>
@@ -220,7 +230,7 @@ export default function SettingsScreen() {
             </div>
           </div>
           ${monthSections}
-          <div class="footer">Pockyt · ${transactions.length} transactions · Exported ${format(new Date(), 'yyyy-MM-dd')}</div>
+          <div class="footer">Pockyt \u00b7 ${transactions.length} transactions \u00b7 Exported ${format(new Date(), 'yyyy-MM-dd')}</div>
         </body>
         </html>`;
 
@@ -244,6 +254,36 @@ export default function SettingsScreen() {
     }
   }
 
+  async function handleBackup() {
+    try {
+      const json = await exportState();
+      await Share.share({
+        message: json,
+        title: 'Pockyt Backup',
+      });
+    } catch (e: any) {
+      Alert.alert('Backup Failed', e?.message || '');
+    }
+  }
+
+  function handleRestore() {
+    setRestoreInput('');
+    setRestoreModalVisible(true);
+  }
+
+  async function handleRestoreConfirm() {
+    const text = restoreInput.trim();
+    if (!text) return;
+    try {
+      const restored = await importState(text);
+      dispatch({ type: 'IMPORT_STATE', payload: restored });
+      setRestoreModalVisible(false);
+      Alert.alert(t('saved'), t('dataRestored'));
+    } catch {
+      Alert.alert(t('invalidAmount'), t('invalidBackupData'));
+    }
+  }
+
   function handleClearData() {
     Alert.alert(
       t('clearAllData'),
@@ -260,6 +300,13 @@ export default function SettingsScreen() {
         },
       ]
     );
+  }
+
+  function handleDeleteRecurring(id: string) {
+    Alert.alert(t('deleteRecurring'), t('removeRecurringPrompt'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('delete'), style: 'destructive', onPress: () => dispatch({ type: 'DELETE_RECURRING', payload: id }) },
+    ]);
   }
 
   function handleAddCategory() {
@@ -294,17 +341,36 @@ export default function SettingsScreen() {
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.header}>{t('settingsHeader')}</Text>
 
+      {/* Appearance */}
+      <Text style={styles.sectionTitle}>{t('appearance')}</Text>
+      <View style={styles.section}>
+        <View style={styles.darkModeRow}>
+          <View style={styles.darkModeLeft}>
+            <View style={[styles.rowIcon, { backgroundColor: theme.colors.primary + '18' }]}>
+              <Ionicons name={state.darkMode ? 'moon' : 'moon-outline'} size={18} color={theme.colors.primary} />
+            </View>
+            <Text style={styles.darkModeLabel}>{t('darkMode')}</Text>
+          </View>
+          <Switch
+            value={state.darkMode}
+            onValueChange={() => dispatch({ type: 'TOGGLE_DARK_MODE' })}
+            trackColor={{ false: theme.colors.border, true: theme.colors.primary + '88' }}
+            thumbColor={state.darkMode ? theme.colors.primary : theme.colors.textFaint}
+          />
+        </View>
+      </View>
+
       <Text style={styles.sectionTitle}>{t('preferences')}</Text>
       <View style={styles.section}>
-        <Text style={{ padding: 16, paddingBottom: 8, fontSize: 13, color: '#636E72' }}>{t('currencyLabel')}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.currencyRow} contentContainerStyle={{ paddingHorizontal: 12, gap: 8, paddingBottom: 12 }}>
+        <Text style={styles.inlineLabel}>{t('currencyLabel')}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
           {CURRENCIES.map(c => (
             <TouchableOpacity
               key={c}
-              style={[styles.currencyChip, currency === c && styles.currencyChipActive]}
+              style={[styles.chip, currency === c && styles.chipActive]}
               onPress={() => dispatch({ type: 'SET_CURRENCY', payload: c })}
             >
-              <Text style={[styles.currencyChipText, currency === c && styles.currencyChipTextActive]}>{c}</Text>
+              <Text style={[styles.chipText, currency === c && styles.chipTextActive]}>{c}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -317,6 +383,7 @@ export default function SettingsScreen() {
           label={t('manageCategories')}
           value={t('categoriesCount')(categories.length)}
           onPress={() => setCatModalVisible(true)}
+          theme={theme}
         />
       </View>
 
@@ -327,19 +394,31 @@ export default function SettingsScreen() {
           label={t('setBudget')}
           value={budgetCount > 0 ? t('categoriesCount')(budgetCount) : undefined}
           onPress={handleOpenBudgetModal}
+          theme={theme}
+        />
+      </View>
+
+      <Text style={styles.sectionTitle}>{t('recurringTransactions')}</Text>
+      <View style={styles.section}>
+        <SettingRow
+          icon="repeat-outline"
+          label={t('manageRecurring')}
+          value={recurringTransactions.length > 0 ? t('recurringCount')(recurringTransactions.length) : undefined}
+          onPress={() => setRecurringModalVisible(true)}
+          theme={theme}
         />
       </View>
 
       <Text style={styles.sectionTitle}>{t('languageLabel')}</Text>
       <View style={styles.section}>
         <View style={{ paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', gap: 8 }}>
-          {[{ id: 'en', label: 'English' }, { id: 'zh', label: '中文' }].map(lang => (
+          {[{ id: 'en', label: 'English' }, { id: 'zh', label: '\u4e2d\u6587' }].map(lang => (
             <TouchableOpacity
               key={lang.id}
-              style={[styles.currencyChip, language === lang.id && styles.currencyChipActive]}
+              style={[styles.chip, language === lang.id && styles.chipActive]}
               onPress={() => dispatch({ type: 'SET_LANGUAGE', payload: lang.id })}
             >
-              <Text style={[styles.currencyChipText, language === lang.id && styles.currencyChipTextActive]}>
+              <Text style={[styles.chipText, language === lang.id && styles.chipTextActive]}>
                 {lang.label}
               </Text>
             </TouchableOpacity>
@@ -349,80 +428,66 @@ export default function SettingsScreen() {
 
       <Text style={styles.sectionTitle}>{t('aiAssistant')}</Text>
       <View style={styles.section}>
-        <Text style={styles.aiSubLabel}>{t('providerLabel')}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.providerRow}>
+        <Text style={styles.inlineLabel}>{t('providerLabel')}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
           {AI_PROVIDERS.map(p => (
             <TouchableOpacity
               key={p.id}
-              style={[styles.providerChip, aiProvider === p.id && styles.providerChipActive]}
+              style={[styles.chip, aiProvider === p.id && styles.chipActive]}
               onPress={() => handleSelectProvider(p.id)}
             >
-              <Text style={[styles.providerChipText, aiProvider === p.id && styles.providerChipTextActive]}>
+              <Text style={[styles.chipText, aiProvider === p.id && styles.chipTextActive]}>
                 {p.label}
               </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
-        <Text style={styles.aiSubLabel}>{t('apiKeyLabel')}</Text>
+        <Text style={styles.inlineLabel}>{t('apiKeyLabel')}</Text>
         <View style={styles.apiKeyRow}>
           <TextInput
             style={styles.apiKeyInput}
             placeholder={t('pasteApiKey')}
+            placeholderTextColor={theme.colors.textFaint}
             value={keyInput}
             onChangeText={setKeyInput}
             secureTextEntry={!showKey}
             autoCapitalize="none"
             autoCorrect={false}
           />
-          <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowKey(v => !v)}>
-            <Ionicons name={showKey ? 'eye-off-outline' : 'eye-outline'} size={20} color="#636E72" />
+          <TouchableOpacity style={{ padding: 10 }} onPress={() => setShowKey(v => !v)}>
+            <Ionicons name={showKey ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.colors.textMuted} />
           </TouchableOpacity>
         </View>
         <Text style={styles.apiKeyHint}>
           Get your key at: {selectedProvider.hint}
         </Text>
-        <TouchableOpacity style={styles.saveKeyBtn} onPress={handleSaveApiKey}>
-          <Text style={styles.saveKeyBtnText}>{t('saveApiKey')}</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveApiKey}>
+          <Text style={styles.primaryBtnText}>{t('saveApiKey')}</Text>
         </TouchableOpacity>
       </View>
 
       <Text style={styles.sectionTitle}>{t('dataLabel')}</Text>
       <View style={styles.section}>
-        <SettingRow
-          icon="document-text-outline"
-          label={t('exportPDF')}
-          onPress={handleExportPDF}
-        />
-        <SettingRow
-          icon="trash-outline"
-          label={t('clearAllData')}
-          onPress={handleClearData}
-          danger
-        />
+        <SettingRow icon="document-text-outline" label={t('exportPDF')} onPress={handleExportPDF} theme={theme} />
+        <SettingRow icon="download-outline" label={t('backupData')} onPress={handleBackup} theme={theme} />
+        <SettingRow icon="push-outline" label={t('restoreData')} onPress={handleRestore} theme={theme} />
+        <SettingRow icon="trash-outline" label={t('clearAllData')} onPress={handleClearData} danger theme={theme} />
       </View>
 
       <Text style={styles.sectionTitle}>{t('comingSoon')}</Text>
       <View style={styles.section}>
-        <View style={styles.comingSoon}>
-          <Ionicons name="cloud-outline" size={20} color="#B2BEC3" />
-          <Text style={styles.comingSoonText}>{t('cloudSync')}</Text>
+        <View style={styles.comingSoonRow}>
+          <Ionicons name="cloud-outline" size={20} color={theme.colors.textFaint} />
+          <Text style={[styles.comingSoonText, { color: theme.colors.textFaint }]}>{t('cloudSync')}</Text>
           <View style={styles.badge}><Text style={styles.badgeText}>{t('soon')}</Text></View>
         </View>
       </View>
 
       <Text style={styles.sectionTitle}>{t('aboutLabel')}</Text>
       <View style={styles.section}>
-        <SettingRow
-          icon="information-circle-outline"
-          label={t('aboutUs')}
-          onPress={() => setAboutModalVisible(true)}
-        />
-        <SettingRow
-          icon="shield-checkmark-outline"
-          label={t('privacyPolicy')}
-          onPress={() => setPrivacyModalVisible(true)}
-        />
+        <SettingRow icon="information-circle-outline" label={t('aboutUs')} onPress={() => setAboutModalVisible(true)} theme={theme} />
+        <SettingRow icon="shield-checkmark-outline" label={t('privacyPolicy')} onPress={() => setPrivacyModalVisible(true)} theme={theme} />
       </View>
 
       <Text style={styles.version}>{t('version')}</Text>
@@ -434,17 +499,17 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('aboutUs')}</Text>
               <TouchableOpacity onPress={() => setAboutModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#636E72" />
+                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
-            <View style={styles.aboutContent}>
-              <View style={styles.aboutIconWrap}>
-                <Ionicons name="wallet" size={40} color="#6C5CE7" />
+            <View style={{ alignItems: 'center', paddingVertical: 16, paddingHorizontal: 8 }}>
+              <View style={[styles.aboutIcon, { backgroundColor: theme.colors.primary + '18' }]}>
+                <Ionicons name="wallet" size={40} color={theme.colors.primary} />
               </View>
-              <Text style={styles.aboutTitle}>{t('aboutTitle')}</Text>
-              <Text style={styles.aboutVersion}>{t('aboutVersion')}</Text>
-              <Text style={styles.aboutDesc}>{t('aboutDesc')}</Text>
-              <Text style={styles.aboutBuiltWith}>{t('aboutBuiltWith')}</Text>
+              <Text style={[styles.aboutTitle, { color: theme.colors.text }]}>{t('aboutTitle')}</Text>
+              <Text style={{ fontSize: 13, color: theme.colors.textFaint, marginBottom: 16 }}>{t('aboutVersion')}</Text>
+              <Text style={{ fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 22, marginBottom: 20 }}>{t('aboutDesc')}</Text>
+              <Text style={{ fontSize: 12, color: theme.colors.textFaint, textAlign: 'center' }}>{t('aboutBuiltWith')}</Text>
             </View>
           </View>
         </View>
@@ -457,29 +522,21 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('privacyPolicy')}</Text>
               <TouchableOpacity onPress={() => setPrivacyModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#636E72" />
+                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.privacySection}>1. Information We Collect</Text>
-              <Text style={styles.privacyText}>Pockyt stores all your financial data (transactions, budgets, and settings) locally on your device. We do not collect or transmit your personal financial information to our servers.</Text>
-
+              <Text style={styles.privacyText}>Pockyt stores all your financial data locally on your device. We do not collect or transmit your personal financial information to our servers.</Text>
               <Text style={styles.privacySection}>2. AI Features</Text>
-              <Text style={styles.privacyText}>When you use AI features (receipt scanning or the AI assistant), your data is sent directly to your chosen AI provider (OpenAI, Google, Anthropic, or DeepSeek) using the API key you provide. We do not store or have access to these requests.</Text>
-
+              <Text style={styles.privacyText}>When you use AI features, your data is sent directly to your chosen AI provider using the API key you provide. We do not store or have access to these requests.</Text>
               <Text style={styles.privacySection}>3. Camera & Photos</Text>
-              <Text style={styles.privacyText}>Receipt photos are stored locally on your device only. We do not upload your photos to any server.</Text>
-
-              <Text style={styles.privacySection}>4. Third-Party Services</Text>
-              <Text style={styles.privacyText}>AI processing is handled by the provider you select in Settings. Please review their respective privacy policies for details on how they handle your data.</Text>
-
-              <Text style={styles.privacySection}>5. Data Security</Text>
-              <Text style={styles.privacyText}>Your API keys are stored locally on your device and are never shared with us. You can clear all app data at any time from Settings → Data.</Text>
-
-              <Text style={styles.privacySection}>6. Contact</Text>
-              <Text style={styles.privacyText}>For questions about this privacy policy, please contact us at support@pockyt.app.</Text>
-
-              <Text style={styles.privacyUpdated}>Last updated: March 2026</Text>
+              <Text style={styles.privacyText}>Receipt photos are stored locally on your device only.</Text>
+              <Text style={styles.privacySection}>4. Data Security</Text>
+              <Text style={styles.privacyText}>Your API keys are stored locally and never shared with us. You can clear all app data at any time from Settings.</Text>
+              <Text style={styles.privacySection}>5. Contact</Text>
+              <Text style={styles.privacyText}>For questions, contact us at support@pockyt.app.</Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textFaint, marginTop: 24, marginBottom: 8, textAlign: 'center' }}>Last updated: March 2026</Text>
             </ScrollView>
           </View>
         </View>
@@ -492,14 +549,15 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('categoriesLabel')}</Text>
               <TouchableOpacity onPress={() => setCatModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#636E72" />
+                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.addRow}>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
               <TextInput
-                style={styles.catInput}
+                style={[styles.catInput, { flex: 1 }]}
                 placeholder={t('newCategoryPlaceholder')}
+                placeholderTextColor={theme.colors.textFaint}
                 value={newCat}
                 onChangeText={setNewCat}
               />
@@ -510,10 +568,10 @@ export default function SettingsScreen() {
 
             <ScrollView style={{ maxHeight: 320 }}>
               {categories.map(cat => (
-                <View key={cat} style={styles.catRow}>
-                  <Text style={styles.catName}>{cat}</Text>
+                <View key={cat} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
+                  <Text style={{ flex: 1, fontSize: 15, color: theme.colors.text }}>{cat}</Text>
                   <TouchableOpacity onPress={() => handleDeleteCategory(cat)}>
-                    <Ionicons name="trash-outline" size={18} color="#B2BEC3" />
+                    <Ionicons name="trash-outline" size={18} color={theme.colors.textFaint} />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -530,19 +588,17 @@ export default function SettingsScreen() {
         >
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setEmailModalVisible(false)} />
           <View style={styles.emailCard}>
-            <View style={styles.emailIconWrap}>
-              <Ionicons name="document-text-outline" size={28} color="#6C5CE7" />
+            <View style={[styles.aboutIcon, { backgroundColor: theme.colors.primary + '18', marginBottom: 16 }]}>
+              <Ionicons name="document-text-outline" size={28} color={theme.colors.primary} />
             </View>
-            <Text style={styles.emailTitle}>{t('exportPDF')}</Text>
-            <Text style={styles.emailSubtitle}>
-              {language === 'zh'
-                ? '将生成 PDF 报告并通过邮件发送'
-                : 'A PDF report will be generated and sent to your email'}
+            <Text style={{ fontSize: 20, fontWeight: '700', color: theme.colors.text, marginBottom: 6 }}>{t('exportPDF')}</Text>
+            <Text style={{ fontSize: 13, color: theme.colors.textMuted, textAlign: 'center', marginBottom: 20, lineHeight: 18 }}>
+              {language === 'zh' ? '\u5c06\u751f\u6210 PDF \u62a5\u544a\u5e76\u901a\u8fc7\u90ae\u4ef6\u53d1\u9001' : 'A PDF report will be generated and sent to your email'}
             </Text>
             <TextInput
               style={styles.emailInput}
               placeholder={t('enterEmail')}
-              placeholderTextColor="#B2BEC3"
+              placeholderTextColor={theme.colors.textFaint}
               value={emailInput}
               onChangeText={setEmailInput}
               keyboardType="email-address"
@@ -552,25 +608,92 @@ export default function SettingsScreen() {
               onSubmitEditing={handleSendPDF}
               autoFocus
             />
-            <View style={styles.emailBtnRow}>
-              <TouchableOpacity
-                style={styles.emailCancelBtn}
-                onPress={() => setEmailModalVisible(false)}
-              >
-                <Text style={styles.emailCancelText}>{t('cancel')}</Text>
+            <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+              <TouchableOpacity style={styles.emailCancelBtn} onPress={() => setEmailModalVisible(false)}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: theme.colors.textMuted }}>{t('cancel')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.emailSendBtn} onPress={handleSendPDF} disabled={emailSending}>
                 {emailSending
                   ? <ActivityIndicator color="#fff" size="small" />
                   : <>
                       <Ionicons name="send" size={16} color="#fff" style={{ marginRight: 6 }} />
-                      <Text style={styles.emailSendText}>{t('send')}</Text>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff' }}>{t('send')}</Text>
                     </>
                 }
               </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Restore modal */}
+      <Modal visible={restoreModalVisible} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('restoreData')}</Text>
+              <TouchableOpacity onPress={() => setRestoreModalVisible(false)}>
+                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 13, color: theme.colors.textFaint, marginBottom: 12 }}>{t('pasteBackupJson')}</Text>
+            <TextInput
+              style={[styles.catInput, { height: 160, textAlignVertical: 'top', marginBottom: 16 }]}
+              multiline
+              placeholder="{ ... }"
+              placeholderTextColor={theme.colors.textFaint}
+              value={restoreInput}
+              onChangeText={setRestoreInput}
+              autoFocus
+            />
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleRestoreConfirm}>
+              <Text style={styles.primaryBtnText}>{t('restoreData')}</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Recurring transactions modal */}
+      <Modal visible={recurringModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('recurringTransactions')}</Text>
+              <TouchableOpacity onPress={() => setRecurringModalVisible(false)}>
+                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            {recurringTransactions.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+                <Ionicons name="repeat-outline" size={40} color={theme.colors.textFaint} />
+                <Text style={{ fontSize: 14, color: theme.colors.textFaint, marginTop: 12 }}>{t('noRecurringYet')}</Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 380 }}>
+                {recurringTransactions.map(r => {
+                  const isExpense = r.type === 'expense';
+                  return (
+                    <View key={r.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: theme.colors.text }}>
+                          {r.category}{r.note ? ` · ${r.note}` : ''}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: theme.colors.textMuted, marginTop: 2 }}>
+                          {t(r.frequency as any)} · <Text style={{ color: isExpense ? theme.colors.danger : theme.colors.success }}>
+                            {isExpense ? '-' : '+'}{new Intl.NumberFormat(locale, { style: 'currency', currency }).format(r.amount)}
+                          </Text>
+                        </Text>
+                      </View>
+                      <TouchableOpacity onPress={() => handleDeleteRecurring(r.id)} style={{ padding: 8 }}>
+                        <Ionicons name="trash-outline" size={18} color={theme.colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
       </Modal>
 
       {/* Budget modal */}
@@ -580,17 +703,18 @@ export default function SettingsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t('budgetLimits')}</Text>
               <TouchableOpacity onPress={() => setBudgetModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#636E72" />
+                <Ionicons name="close" size={24} color={theme.colors.textMuted} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.budgetHint}>{t('noBudgetsHint')}</Text>
+            <Text style={{ fontSize: 12, color: theme.colors.textFaint, marginBottom: 12 }}>{t('noBudgetsHint')}</Text>
             <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
               {categories.map(cat => (
-                <View key={cat} style={styles.budgetInputRow}>
-                  <Text style={styles.budgetCatName}>{cat}</Text>
+                <View key={cat} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
+                  <Text style={{ flex: 1, fontSize: 15, color: theme.colors.text }}>{cat}</Text>
                   <TextInput
                     style={styles.budgetInput}
                     placeholder="0"
+                    placeholderTextColor={theme.colors.textFaint}
                     keyboardType="decimal-pad"
                     value={localBudgets[cat] || ''}
                     onChangeText={val => setLocalBudgets(prev => ({ ...prev, [cat]: val }))}
@@ -598,8 +722,8 @@ export default function SettingsScreen() {
                 </View>
               ))}
             </ScrollView>
-            <TouchableOpacity style={styles.saveKeyBtn} onPress={handleSaveBudgets}>
-              <Text style={styles.saveKeyBtnText}>{t('setBudget')}</Text>
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleSaveBudgets}>
+              <Text style={styles.primaryBtnText}>{t('setBudget')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -609,222 +733,153 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 16, paddingBottom: 40 },
-  header: { fontSize: 28, fontWeight: '800', color: theme.colors.text, marginBottom: 20 },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: theme.colors.textFaint, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, marginTop: 16, paddingLeft: 4 },
-  section: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    overflow: 'hidden',
-    ...theme.shadow.card,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  rowIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#EEE9FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowIconDanger: { backgroundColor: '#FFEAEA' },
-  rowLabel: { flex: 1, fontSize: 15, color: theme.colors.text },
-  rowLabelDanger: { color: '#D63031' },
-  rowRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  rowValue: { fontSize: 13, color: theme.colors.textMuted },
-  currencyRow: {},
-  currencyChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#F0F0F5',
-  },
-  currencyChipActive: { backgroundColor: theme.colors.primary },
-  currencyChipText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
-  currencyChipTextActive: { color: '#fff' },
-  aiSubLabel: { fontSize: 13, color: '#636E72', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
-  providerRow: { paddingHorizontal: 12, gap: 8, paddingBottom: 12 },
-  providerChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F0F0F5',
-  },
-  providerChipActive: { backgroundColor: theme.colors.primary },
-  providerChipText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
-  providerChipTextActive: { color: '#fff' },
-  apiKeyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    backgroundColor: theme.colors.surfaceMuted,
-    paddingHorizontal: 14,
-  },
-  apiKeyInput: { flex: 1, fontSize: 14, paddingVertical: 12 },
-  eyeBtn: { padding: 10 },
-  apiKeyHint: { fontSize: 11, color: '#B2BEC3', marginHorizontal: 16, marginTop: 6 },
-  saveKeyBtn: {
-    margin: 16,
-    marginTop: 12,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-  },
-  saveKeyBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  comingSoon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    gap: 12,
-  },
-  comingSoonText: { flex: 1, fontSize: 15, color: '#B2BEC3' },
-  badge: { backgroundColor: '#F0F0F5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  badgeText: { fontSize: 11, color: '#B2BEC3', fontWeight: '600' },
-  version: { textAlign: 'center', color: '#B2BEC3', fontSize: 12, marginTop: 32 },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  modalSheet: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: theme.colors.text },
-  aboutContent: { alignItems: 'center', paddingVertical: 16, paddingHorizontal: 8 },
-  aboutIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: '#F0EEFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  aboutTitle: { fontSize: 24, fontWeight: '800', color: theme.colors.text, marginBottom: 4 },
-  aboutVersion: { fontSize: 13, color: theme.colors.textFaint, marginBottom: 16 },
-  aboutDesc: { fontSize: 14, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 22, marginBottom: 20 },
-  aboutBuiltWith: { fontSize: 12, color: theme.colors.textFaint, textAlign: 'center' },
-  privacySection: { fontSize: 14, fontWeight: '700', color: theme.colors.text, marginTop: 16, marginBottom: 6 },
-  privacyText: { fontSize: 13, color: theme.colors.textMuted, lineHeight: 20 },
-  privacyUpdated: { fontSize: 11, color: theme.colors.textFaint, marginTop: 24, marginBottom: 8, textAlign: 'center' },
-  addRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  catInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
-    backgroundColor: theme.colors.surfaceMuted,
-  },
-  addCatBtn: {
-    backgroundColor: theme.colors.primary,
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  catRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  catName: { flex: 1, fontSize: 15, color: theme.colors.text },
-  budgetHint: { fontSize: 12, color: '#B2BEC3', marginBottom: 12 },
-  budgetInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  budgetCatName: { flex: 1, fontSize: 15, color: theme.colors.text },
-  budgetInput: {
-    width: 90,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 8,
-    padding: 8,
-    fontSize: 14,
-    textAlign: 'right',
-    backgroundColor: theme.colors.surfaceMuted,
-  },
-  emailOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 24,
-  },
-  emailCard: {
-    width: '100%',
-    backgroundColor: theme.colors.surface,
-    borderRadius: 24,
-    padding: 28,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 12,
-  },
-  emailIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: '#EEE9FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  emailTitle: { fontSize: 20, fontWeight: '700', color: '#2D3436', marginBottom: 6 },
-  emailSubtitle: { fontSize: 13, color: '#636E72', textAlign: 'center', marginBottom: 20, lineHeight: 18 },
-  emailInput: {
-    width: '100%',
-    borderWidth: 1.5,
-    borderColor: '#DFE6E9',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
-    color: '#2D3436',
-    backgroundColor: '#F8F9FA',
-    marginBottom: 20,
-  },
-  emailBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
-  emailCancelBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: '#F0F0F5',
-    alignItems: 'center',
-  },
-  emailCancelText: { fontSize: 15, fontWeight: '600', color: '#636E72' },
-  emailSendBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingVertical: 14,
-    borderRadius: 14,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emailSendText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-});
+function createStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: theme.colors.background },
+    content: { padding: 16, paddingBottom: 40 },
+    header: { fontSize: 28, fontWeight: '800', color: theme.colors.text, marginBottom: 20 },
+    sectionTitle: { fontSize: 12, fontWeight: '700', color: theme.colors.textFaint, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8, marginTop: 16, paddingLeft: 4 },
+    section: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.radius.lg,
+      overflow: 'hidden',
+      ...theme.shadow.card,
+    },
+    darkModeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: 16,
+    },
+    darkModeLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    rowIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    darkModeLabel: { fontSize: 15, color: theme.colors.text },
+    inlineLabel: { fontSize: 13, color: theme.colors.textMuted, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 },
+    chipRow: { paddingHorizontal: 12, gap: 8, paddingBottom: 12 },
+    chip: {
+      paddingHorizontal: 14,
+      paddingVertical: 7,
+      borderRadius: 20,
+      backgroundColor: theme.colors.surfaceMuted,
+    },
+    chipActive: { backgroundColor: theme.colors.primary },
+    chipText: { fontSize: 13, fontWeight: '600', color: theme.colors.textMuted },
+    chipTextActive: { color: '#fff' },
+    apiKeyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginHorizontal: 16,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      backgroundColor: theme.colors.surfaceMuted,
+      paddingHorizontal: 14,
+    },
+    apiKeyInput: { flex: 1, fontSize: 14, paddingVertical: 12, color: theme.colors.text },
+    apiKeyHint: { fontSize: 11, color: theme.colors.textFaint, marginHorizontal: 16, marginTop: 6 },
+    primaryBtn: {
+      margin: 16,
+      marginTop: 12,
+      backgroundColor: theme.colors.primary,
+      borderRadius: 12,
+      padding: 14,
+      alignItems: 'center',
+    },
+    primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+    comingSoonRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 16,
+      gap: 12,
+    },
+    comingSoonText: { flex: 1, fontSize: 15 },
+    badge: { backgroundColor: theme.colors.surfaceMuted, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+    badgeText: { fontSize: 11, color: theme.colors.textFaint, fontWeight: '600' },
+    version: { textAlign: 'center', color: theme.colors.textFaint, fontSize: 12, marginTop: 32 },
+    modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+    modalSheet: {
+      backgroundColor: theme.colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: 24,
+      paddingBottom: 40,
+    },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    modalTitle: { fontSize: 20, fontWeight: '700', color: theme.colors.text },
+    aboutIcon: { width: 72, height: 72, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+    aboutTitle: { fontSize: 24, fontWeight: '800', marginBottom: 4 },
+    privacySection: { fontSize: 14, fontWeight: '700', color: theme.colors.text, marginTop: 16, marginBottom: 6 },
+    privacyText: { fontSize: 13, color: theme.colors.textMuted, lineHeight: 20 },
+    catInput: {
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      padding: 12,
+      fontSize: 15,
+      backgroundColor: theme.colors.surfaceMuted,
+      color: theme.colors.text,
+    },
+    addCatBtn: {
+      backgroundColor: theme.colors.primary,
+      width: 46,
+      height: 46,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    budgetInput: {
+      width: 90,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      padding: 8,
+      fontSize: 14,
+      textAlign: 'right',
+      backgroundColor: theme.colors.surfaceMuted,
+      color: theme.colors.text,
+    },
+    emailOverlay: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0,0,0,0.45)',
+      paddingHorizontal: 24,
+    },
+    emailCard: {
+      width: '100%',
+      backgroundColor: theme.colors.surface,
+      borderRadius: 24,
+      padding: 28,
+      alignItems: 'center',
+      ...theme.shadow.card,
+    },
+    emailInput: {
+      width: '100%',
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+      borderRadius: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 15,
+      color: theme.colors.text,
+      backgroundColor: theme.colors.surfaceMuted,
+      marginBottom: 20,
+    },
+    emailCancelBtn: {
+      flex: 1,
+      paddingVertical: 14,
+      borderRadius: 14,
+      backgroundColor: theme.colors.surfaceMuted,
+      alignItems: 'center',
+    },
+    emailSendBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      paddingVertical: 14,
+      borderRadius: 14,
+      backgroundColor: theme.colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
+}
